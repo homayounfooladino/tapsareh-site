@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { api, ApiError, chatStream, type Account, type PastTurn, type SessionSummary } from "@/lib/api";
 import { fa } from "@/lib/fa";
 import type { Turn } from "@/lib/types";
-import { MSG } from "@/content/copy";
+import { HELD, MSG } from "@/content/copy";
 import { Composer, type ComposerHandle } from "./Composer";
 import { Icon } from "./Icon";
 import { Sidebar } from "./Sidebar";
@@ -48,6 +48,29 @@ function fromPast(p: PastTurn, i: number): Turn {
   };
 }
 
+// A question asked before sign-in waits in this tab (not on any server) so a reload, or the phone dropping the tab
+// while the person reads the SMS, does not lose it.
+const HELD_KEY = "tp-held";
+function saveHeld(text: string | null) {
+  try {
+    if (text) sessionStorage.setItem(HELD_KEY, text);
+    else sessionStorage.removeItem(HELD_KEY);
+  } catch {
+    /* storage blocked: the question lasts until reload */
+  }
+}
+function loadHeld(): string | null {
+  try {
+    return sessionStorage.getItem(HELD_KEY);
+  } catch {
+    return null;
+  }
+}
+// The pause before the sign-in card, so the question feels received before sign-in is asked for.
+const holdDelay = () => 3000 + Math.round(Math.random() * 1500);
+
+type SignupReason = "quota" | "manual" | "ended" | "answer";
+
 function setUrlChat(id: string | null) {
   try {
     const u = new URL(location.href);
@@ -69,7 +92,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [rulesOpen, setRulesOpen] = useState(false);
-  const [signupReason, setSignupReason] = useState<"quota" | "manual" | "ended">("manual");
+  const [signupReason, setSignupReason] = useState<SignupReason>("manual");
   const [sms, setSms] = useState({ rest: "", name: "", mobile: "", resendAfter: 60 });
   const [sideOpen, setSideOpen] = useState(false);
   const theme = useSyncExternalStore(subscribeTheme, readTheme, serverTheme);
@@ -83,6 +106,9 @@ export default function App() {
   const accountRef = useRef<Account | null>(null);
   const sidRef = useRef("");
   const pendingRef = useRef<string | null>(null);
+  // The question on the page that waits for sign-in (nothing has been sent for it yet).
+  const heldRef = useRef<{ key: string; text: string } | null>(null);
+  const holdTimer = useRef<number | null>(null);
   const smsOkRef = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
   const composer = useRef<ComposerHandle>(null);
@@ -127,8 +153,8 @@ export default function App() {
     }
   }, []);
 
-  const openSignup = useCallback((reason: "quota" | "manual" | "ended") => {
-    setSignupReason(reason);
+  const openSignup = useCallback((reason: SignupReason) => {
+    setSignupReason(reason === "manual" && heldRef.current ? "answer" : reason);
     setDialog(smsOkRef.current ? "signup" : "invite");
     setSideOpen(false);
   }, []);
@@ -137,14 +163,60 @@ export default function App() {
     setTurns((all) => all.map((t) => (t.key === key ? { ...t, ...(typeof patch === "function" ? patch(t) : patch) } : t)));
   }, []);
 
+  const stopHoldTimer = useCallback(() => {
+    if (holdTimer.current == null) return;
+    clearTimeout(holdTimer.current);
+    holdTimer.current = null;
+    setBusy(false);
+  }, []);
+
+  // Not signed in: keep the question on the page and ask for sign-in. Nothing goes to the server before that;
+  // right after sign-in, afterLogin sends it. With `pause`, the page first shows the usual waiting card for a moment.
+  const hold = useCallback(
+    (text: string, reason: SignupReason, pause: boolean) => {
+      stopHoldTimer();
+      const prev = heldRef.current;
+      const key = newKey();
+      heldRef.current = { key, text };
+      pendingRef.current = text;
+      saveHeld(text);
+      pinned.current = true;
+      const short = text.trim().slice(0, 60);
+      setTitle((t) => (!t || (prev && t === prev.text.trim().slice(0, 60)) ? short : t));
+      const turn: Turn = pause
+        ? { key, q: text, state: "waiting", stage: "rewrite", startedAt: Date.now(), text: "", held: true }
+        : { key, q: text, state: "locked", text: "", held: true };
+      setTurns((all) => [...all.filter((t) => !t.held), turn]);
+      if (!pause) {
+        openSignup(reason);
+        return;
+      }
+      setBusy(true);
+      holdTimer.current = window.setTimeout(() => {
+        holdTimer.current = null;
+        setBusy(false);
+        updateTurn(key, { state: "locked" });
+        openSignup(reason);
+      }, holdDelay());
+    },
+    [openSignup, stopHoldTimer, updateTurn],
+  );
+
+  const dropHeld = useCallback(() => {
+    stopHoldTimer();
+    const h = heldRef.current;
+    heldRef.current = null;
+    pendingRef.current = null;
+    saveHeld(null);
+    if (h) setTurns((all) => all.filter((t) => t.key !== h.key));
+  }, [stopHoldTimer]);
+
   const send = useCallback(
     async (raw: string) => {
       const text = raw;
-      if (!text.trim() || abortRef.current) return;
+      if (!text.trim() || abortRef.current || holdTimer.current != null) return;
       if (!accountRef.current) {
-        // The server has no guest mode (or the visitor signed out): ask to sign in, then send this question.
-        pendingRef.current = text;
-        openSignup("manual");
+        hold(text, "answer", true);
         return;
       }
       let s = sidRef.current;
@@ -158,8 +230,7 @@ export default function App() {
           const err = e as ApiError;
           if (err.status === 401) {
             setAccount(null);
-            pendingRef.current = text;
-            openSignup("ended");
+            hold(text, err.code === "login_required" ? "answer" : "ended", false);
           } else setPageNote(MSG.net);
           return;
         }
@@ -221,8 +292,7 @@ export default function App() {
           setTurns((all) => all.filter((t) => t.key !== key));
           setAccount(null);
           setSid("");
-          pendingRef.current = text;
-          openSignup("ended");
+          hold(text, "ended", false);
         } else if (err.status === 429 && err.code === "quota_guest") {
           setTurns((all) => all.filter((t) => t.key !== key));
           pendingRef.current = text;
@@ -243,7 +313,7 @@ export default function App() {
         void refreshChats();
       }
     },
-    [mergeAccount, openSignup, refreshChats, setAccount, setSid, title, updateTurn],
+    [hold, mergeAccount, openSignup, refreshChats, setAccount, setSid, title, updateTurn],
   );
 
   const resetConversation = useCallback(() => {
@@ -256,6 +326,7 @@ export default function App() {
   const newChat = useCallback(async () => {
     setSideOpen(false);
     abortRef.current?.abort();
+    dropHeld();
     const old = sidRef.current;
     const hadTurns = turns.length > 0;
     resetConversation();
@@ -268,7 +339,7 @@ export default function App() {
       setSid("");
       if ((e as ApiError).status === 401) setAccount(null);
     }
-  }, [mergeAccount, resetConversation, setAccount, setSid, turns.length]);
+  }, [dropHeld, mergeAccount, resetConversation, setAccount, setSid, turns.length]);
 
   const openChat = useCallback(
     async (id: string) => {
@@ -298,10 +369,13 @@ export default function App() {
   const afterLogin = useCallback(
     async (j: Account) => {
       const wasGuest = accountRef.current?.account === "guest";
+      const held = heldRef.current;
+      stopHoldTimer();
       setAccount({ ...j });
       // The server moves all of a guest's conversations into the new account; keep the one on screen open
-      // (a guest may have reopened an older chat from the side menu).
-      let s = (wasGuest ? sidRef.current : "") || j.session_id || "";
+      // (a guest may have reopened an older chat from the side menu). A question asked before sign-in starts
+      // a fresh chat: the moved one holds earlier questions this page does not show.
+      let s = (wasGuest ? sidRef.current : "") || (held ? "" : j.session_id || "");
       if (!s) {
         try {
           const k = await api.session();
@@ -316,13 +390,19 @@ export default function App() {
       void refreshChats();
       const p = pendingRef.current;
       pendingRef.current = null;
+      if (held) {
+        heldRef.current = null;
+        saveHeld(null);
+        setTurns((all) => all.filter((t) => t.key !== held.key));
+      }
       if (p) void send(p);
     },
-    [mergeAccount, refreshChats, send, setAccount, setSid],
+    [mergeAccount, refreshChats, send, setAccount, setSid, stopHoldTimer],
   );
 
   const logout = useCallback(async () => {
     abortRef.current?.abort();
+    dropHeld();
     await api.logout().catch(() => undefined);
     setAccount(null);
     setSid("");
@@ -336,7 +416,7 @@ export default function App() {
     } catch {
       /* no guest mode: stay signed out */
     }
-  }, [resetConversation, setAccount, setSid]);
+  }, [dropHeld, resetConversation, setAccount, setSid]);
 
   // First load: open a conversation (a guest one if the server allows), then the deep-linked chat if any.
   useEffect(() => {
@@ -350,12 +430,23 @@ export default function App() {
         setTurnInSession(j.turn_in_session || 0);
       } catch (e) {
         if (cancelled) return;
-        // 401 here means the server has no guests yet, so it has no SMS login either.
-        if ((e as ApiError).status === 401) setSmsOk(false);
-        else setPageNote(MSG.net);
+        const err = e as ApiError;
+        // 401 «login_required»: sign-in is needed before asking. A bare 401 is today's live server: invite login only.
+        if (err.status === 401) {
+          if (err.code !== "login_required") setSmsOk(false);
+        } else setPageNote(MSG.net);
       }
       if (cancelled) return;
       setBooted(true);
+      const kept = loadHeld();
+      if (kept && !accountRef.current) {
+        // Back after a reload while signing in: show the question again; it is sent after sign-in.
+        const key = newKey();
+        heldRef.current = { key, text: kept };
+        pendingRef.current = kept;
+        setTurns([{ key, q: kept, state: "locked", text: "", held: true }]);
+        setTitle(kept.trim().slice(0, 60));
+      } else if (kept) saveHeld(null);
       await refreshChats();
       const c = new URLSearchParams(location.search).get("c");
       if (c && accountRef.current) void openChat(c);
@@ -366,6 +457,13 @@ export default function App() {
     // Runs once, on first load. The callbacks it uses read their state from refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(
+    () => () => {
+      if (holdTimer.current != null) clearTimeout(holdTimer.current);
+    },
+    [],
+  );
 
   // Keep the newest answer in view while it streams, unless the reader scrolled up.
   useEffect(() => {
@@ -462,7 +560,17 @@ export default function App() {
           ) : (
             <div className="col">
               {turns.map((t) => (
-                <TurnView key={t.key} turn={t} sid={sid} />
+                <TurnView
+                  key={t.key}
+                  turn={t}
+                  sid={sid}
+                  onSms={smsOk ? () => openSignup("answer") : undefined}
+                  onInvite={() => {
+                    setSignupReason("answer");
+                    setDialog("invite");
+                    setSideOpen(false);
+                  }}
+                />
               ))}
             </div>
           )}
@@ -495,7 +603,7 @@ export default function App() {
           onRules={() => setRulesOpen(true)}
           onClose={() => {
             setDialog(null);
-            pendingRef.current = null;
+            if (!heldRef.current) pendingRef.current = null;
           }}
         />
       )}
@@ -508,18 +616,19 @@ export default function App() {
           onEdit={() => setDialog("signup")}
           onClose={() => {
             setDialog(null);
-            pendingRef.current = null;
+            if (!heldRef.current) pendingRef.current = null;
           }}
         />
       )}
       {dialog === "invite" && (
         <InviteDialog
+          lede={turns.some((t) => t.held) ? HELD.invite : undefined}
           onLogin={async (code) => afterLogin(await api.login(code))}
           onSms={smsOk ? () => setDialog("signup") : undefined}
           onRules={() => setRulesOpen(true)}
           onClose={() => {
             setDialog(null);
-            pendingRef.current = null;
+            if (!heldRef.current) pendingRef.current = null;
           }}
         />
       )}

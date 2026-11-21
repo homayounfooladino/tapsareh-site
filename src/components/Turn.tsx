@@ -5,7 +5,7 @@ import { api, type Source } from "@/lib/api";
 import { Answer } from "@/lib/answer";
 import { fa } from "@/lib/fa";
 import type { Turn } from "@/lib/types";
-import { MSG, STAGE } from "@/content/copy";
+import { HELD, MSG, STAGE } from "@/content/copy";
 import { Icon, Logo } from "./Icon";
 
 function SourceItem({ s }: { s: Source }) {
@@ -193,7 +193,30 @@ function Waiting({ stage, startedAt }: { stage?: string; startedAt?: number }) {
   );
 }
 
-export function TurnView({ turn, sid }: { turn: Turn; sid: string }) {
+function Locked({ onSms, onInvite }: { onSms?: () => void; onInvite: () => void }) {
+  return (
+    <div className="held" role="status">
+      <b>
+        <Icon name="check" size={18} />
+        {HELD.title}
+      </b>
+      <p>{onSms ? HELD.text : HELD.textInvite}</p>
+      <div className="held-actions">
+        {onSms && (
+          <button type="button" className="btn" onClick={onSms}>
+            <Icon name="phone" size={18} />
+            ورود با شمارهٔ موبایل
+          </button>
+        )}
+        <button type="button" className={onSms ? "btn2" : "btn"} onClick={onInvite}>
+          {onSms ? "کد دعوت دارم" : "ورود با کد دعوت"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function TurnView({ turn, sid, onSms, onInvite }: { turn: Turn; sid: string; onSms?: () => void; onInvite?: () => void }) {
   return (
     <>
       <div className="u">
@@ -204,6 +227,7 @@ export function TurnView({ turn, sid }: { turn: Turn; sid: string }) {
         <div className="bot-body">
           {turn.state === "waiting" && <Waiting stage={turn.stage} startedAt={turn.startedAt} />}
           {turn.state === "error" && <p className="notice">{turn.error || MSG.net}</p>}
+          {turn.state === "locked" && <Locked onSms={onSms} onInvite={onInvite || (() => undefined)} />}
           {(turn.state === "streaming" || turn.state === "done") && (
             <>
               {turn.state === "done" && turn.sources && <p className="basis">{fa(turn.sources.length)} منبع بررسی شد</p>}

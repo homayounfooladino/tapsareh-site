@@ -2,7 +2,7 @@
 
 usage:
   npm run build
-  python3 tests/e2e/site_e2e.py            # starts the mock itself (new and legacy modes)
+  python3 tests/e2e/site_e2e.py            # starts the mock itself (no-guest, guest, legacy and busy modes)
 
 Checks the routine's conditions that can be checked without Spark:
 no visible English letters, disclaimer word for word, Persian digits in date lines,
@@ -167,19 +167,146 @@ async def new_flow(base: str, browser) -> None:
     await ctx.close()
 
 
+async def held_flow(base: str, browser) -> None:
+    """No guests (the new default): a question asked before sign-in waits on the page; nothing is sent until sign-in."""
+    ctx = await browser.new_context(viewport={"width": 1280, "height": 860})
+    page = await ctx.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    sent: list[str] = []
+    page.on("request", lambda r: sent.append(r.url) if "/api/chat" in r.url else None)
+    await page.goto(base)
+    await page.wait_for_selector(".welcome")
+    side = page.locator("aside")
+    check("بی مهمان: منوی کناری ورود با موبایل و کد دعوت را پیشنهاد می‌کند",
+          await side.get_by_text("ورود با شمارهٔ موبایل").count() == 1 and await side.get_by_text("کد دعوت").count() >= 1)
+
+    t0 = time.monotonic()
+    await ask(page)
+    await page.wait_for_selector(".u-bubble")
+    check("پرسش فوراً روی صفحه آمد و کارت انتظار دیده می‌شود", await page.locator(".wait").count() == 1)
+    dlg = page.get_by_role("dialog", name="ورود با شمارهٔ موبایل")
+    await expect(dlg).to_be_visible(timeout=10000)
+    dt = time.monotonic() - t0
+    check("پنجرهٔ ورود پس از چند ثانیه باز شد", 2.5 <= dt <= 7, f"{dt:.1f} ثانیه")
+    check("متن پنجره: «پرسش شما ثبت شد»", "پرسش شما ثبت شد" in await dlg.inner_text())
+    check("پیش از ورود هیچ پرسشی به سرور نرفت", not sent, str(sent))
+    await no_english(page, "پنجرهٔ ورود برای پرسش نگه‌داشته")
+    await page.keyboard.press("Escape")
+    await expect(dlg).to_be_hidden()
+    held = page.locator(".held")
+    check("پس از بستن پنجره، کارت «پرسش شما ثبت شد» با دو دکمه می‌ماند",
+          await held.count() == 1 and await held.locator("button").count() == 2 and "پرسش شما ثبت شد" in await held.inner_text())
+
+    # A second question while one waits takes its place.
+    await ask(page, "پرسش دوم پیش از ورود")
+    await expect(dlg).to_be_visible(timeout=10000)
+    await page.keyboard.press("Escape")
+    bubbles = await page.locator(".u-bubble").all_inner_texts()
+    check("پرسش تازه جای پرسش منتظر را گرفت", bubbles == ["پرسش دوم پیش از ورود"], str(bubbles))
+
+    await held.get_by_role("button", name="کد دعوت دارم").click()
+    inv = page.get_by_role("dialog", name="ورود با کد دعوت")
+    await expect(inv).to_be_visible()
+    check("پنجرهٔ کد دعوت هم از پرسش ثبت‌شده می‌گوید", "پرسش شما ثبت شد" in await inv.inner_text())
+    await page.keyboard.press("Escape")
+    await expect(inv).to_be_hidden()
+
+    # Sign in by SMS from the card: the question is sent once, then answered here.
+    await held.get_by_role("button", name="ورود با شمارهٔ موبایل").click()
+    await expect(dlg).to_be_visible()
+    await page.fill("#m-rest", "۱۲۱۲۳۴۵۶۷")
+    await dlg.get_by_role("checkbox").check()
+    await dlg.get_by_role("button", name="دریافت کد تأیید").click()
+    code = page.get_by_role("dialog", name="کد تأیید")
+    await expect(code).to_be_visible()
+    check("تا پیش از وارد کردن کد هم چیزی فرستاده نشد", not sent, str(sent))
+    await code.locator("input").fill("۱۲۳۴۵۶")
+    await expect(code).to_be_hidden(timeout=5000)
+    await page.wait_for_selector(".bot .actions", timeout=15000)
+    check("پس از ورود، پرسش یک بار فرستاده و جواب داده شد", len(sent) == 1, str(sent))
+    bubbles = await page.locator(".u-bubble").all_inner_texts()
+    check("فقط همان پرسش روی صفحه است", bubbles == ["پرسش دوم پیش از ورود"], str(bubbles))
+    check("کارت «ثبت شد» پس از ورود رفت", await page.locator(".held").count() == 0)
+    await page.wait_for_selector(".history button")
+    check("گفتگو در فهرست منوی کناری آمد", await page.locator(".history button").count() == 1)
+    check("پس از ورود، پرسش از حافظهٔ زبانه پاک شد", await page.evaluate("sessionStorage.getItem('tp-held')") is None)
+    await no_english(page, "پس از ورود و پاسخ")
+    check("بی خطای صفحه (پرسش پیش از ورود)", not errors, "; ".join(errors[:3]))
+    await ctx.close()
+
+    # Reload while signing in: the question comes back, and invite login sends it.
+    ctx = await browser.new_context(viewport={"width": 1280, "height": 860})
+    page = await ctx.new_page()
+    sent2: list[str] = []
+    page.on("request", lambda r: sent2.append(r.url) if "/api/chat" in r.url else None)
+    await page.goto(base)
+    await page.wait_for_selector(".welcome")
+    await ask(page, "پرسش پیش از بارگذاری دوباره")
+    await expect(page.get_by_role("dialog", name="ورود با شمارهٔ موبایل")).to_be_visible(timeout=10000)
+    await page.reload()
+    await page.wait_for_selector(".held", timeout=5000)
+    check("پس از بارگذاری دوباره، پرسش نگه‌داشته برگشت",
+          await page.locator(".u-bubble").all_inner_texts() == ["پرسش پیش از بارگذاری دوباره"])
+    await page.locator(".held").get_by_role("button", name="کد دعوت دارم").click()
+    inv = page.get_by_role("dialog", name="ورود با کد دعوت")
+    await expect(inv).to_be_visible()
+    await inv.locator("input[type=text]").fill("TEST-CODE")
+    await inv.get_by_role("checkbox").check()
+    await inv.get_by_role("button", name="ورود", exact=True).click()
+    await expect(inv).to_be_hidden()
+    await page.wait_for_selector(".bot .actions", timeout=15000)
+    check("ورود با کد دعوت پرسش نگه‌داشته را فرستاد", len(sent2) == 1 and await page.locator(".u-bubble").count() == 1, str(sent2))
+    await ctx.close()
+
+    # New chat drops the waiting question.
+    ctx = await browser.new_context(viewport={"width": 1280, "height": 860})
+    page = await ctx.new_page()
+    await page.goto(base)
+    await page.wait_for_selector(".welcome")
+    await ask(page, "پرسشی که کنار گذاشته می‌شود")
+    await page.wait_for_selector(".wait")
+    await page.get_by_role("button", name="گفتگوی تازه").first.click()
+    await page.wait_for_selector(".welcome")
+    await page.wait_for_timeout(5000)
+    check("«گفتگوی تازه» پرسش منتظر را کنار گذاشت و پنجره‌ای باز نشد",
+          await page.locator("[role=dialog]").count() == 0 and await page.evaluate("sessionStorage.getItem('tp-held')") is None)
+    await ctx.close()
+
+
+async def held_mobile(base: str, browser) -> None:
+    for w, h in [(320, 568), (390, 844)]:
+        ctx = await browser.new_context(viewport={"width": w, "height": h}, is_mobile=True, has_touch=True)
+        page = await ctx.new_page()
+        await page.goto(base)
+        await page.wait_for_selector(".welcome")
+        await ask(page)
+        dlg = page.get_by_role("dialog", name="ورود با شمارهٔ موبایل")
+        await expect(dlg).to_be_visible(timeout=10000)
+        r1 = await page.evaluate(MOBILE_CHECK)
+        await page.keyboard.press("Escape")
+        await page.wait_for_selector(".held")
+        r2 = await page.evaluate(MOBILE_CHECK)
+        check(f"گوشی {w}×{h}: پنجره و کارت «ثبت شد» بی اسکرول افقی و دکمه‌ها یک‌خطی",
+              not r1["hscroll"] and not r1["wrapped"] and not r2["hscroll"] and not r2["wrapped"], f"{r1} {r2}")
+        await ctx.close()
+
+
 async def legacy_flow(base: str, browser) -> None:
-    """Against a server that behaves like today's live one: no guest, invite login only."""
+    """Against a server that behaves like the old live one: no guest, invite login only."""
     ctx = await browser.new_context(viewport={"width": 390, "height": 844})
     page = await ctx.new_page()
     await page.goto(base)
     await page.wait_for_selector(".welcome")
-    check("سرور امروزی: منوی کناری فقط ورود دعوتی پیشنهاد می‌کند", await page.locator("aside").get_by_text("ورود با کد دعوت").count() == 1
+    check("سرور قدیمی: منوی کناری فقط ورود دعوتی پیشنهاد می‌کند", await page.locator("aside").get_by_text("ورود با کد دعوت").count() == 1
           and await page.locator("aside").get_by_text("ورود با شمارهٔ موبایل").count() == 0)
     await ask(page)
     inv = page.get_by_role("dialog", name="ورود با کد دعوت")
-    await expect(inv).to_be_visible()
-    check("سرور امروزی: پرسش اول مستقیم پنجرهٔ کد دعوت را باز می‌کند", True)
-    check("سرور امروزی: پیوند ورود پیامکی پنهان است", await inv.get_by_text("با شمارهٔ موبایل وارد شوید").count() == 0)
+    await expect(inv).to_be_visible(timeout=10000)
+    check("سرور قدیمی: پس از پرسش، پنجرهٔ کد دعوت باز می‌شود", True)
+    check("سرور قدیمی: پیوند ورود پیامکی پنهان است", await inv.get_by_text("با شمارهٔ موبایل وارد شوید").count() == 0)
+    check("سرور قدیمی: کارت «ثبت شد» فقط دکمهٔ کد دعوت دارد",
+          await page.locator(".held button").all_inner_texts() == ["ورود با کد دعوت"])
     await inv.locator("input[type=text]").fill("WRONG")
     await inv.get_by_role("checkbox").check()
     await inv.get_by_role("button", name="ورود", exact=True).click()
@@ -188,7 +315,7 @@ async def legacy_flow(base: str, browser) -> None:
     await inv.get_by_role("button", name="ورود", exact=True).click()
     await expect(inv).to_be_hidden()
     await page.wait_for_selector(".bot .actions", timeout=15000)
-    check("ورود دعوتی با سرور امروزی کار می‌کند و پرسش فرستاده شد", True)
+    check("ورود دعوتی با سرور قدیمی کار می‌کند و پرسش فرستاده شد", True)
     note = await page.locator(".box-note").inner_text()
     check("بی نوار مصرف، شمار باقی‌مانده نشان داده می‌شود", "سؤال برای امروز باقی مانده" in note, note)
     await page.get_by_role("button", name="منو", exact=True).click()
@@ -196,7 +323,7 @@ async def legacy_flow(base: str, browser) -> None:
     check("منوی کناری در گوشی باز می‌شود", "فهرست گفتگوهای قبلی به‌زودی" in await page.locator("aside").inner_text())
     await page.get_by_role("button", name="بستن منو").click()
     await expect(page.locator("aside.side.open")).to_have_count(0)
-    await no_english(page, "گوشی، سرور امروزی")
+    await no_english(page, "گوشی، سرور قدیمی")
     await ctx.close()
 
 
@@ -240,10 +367,18 @@ async def busy_flow(base: str, browser) -> None:
 
 
 async def main() -> int:
-    procs = [start_mock(8701), start_mock(8702, MOCK_LEGACY="1"), start_mock(8703, MOCK_BUSY="1"), start_mock(8704)]
+    procs = [
+        start_mock(8701, MOCK_GUESTS="1"),
+        start_mock(8702, MOCK_LEGACY="1"),
+        start_mock(8703, MOCK_BUSY="1", MOCK_GUESTS="1"),
+        start_mock(8704, MOCK_GUESTS="1"),
+        start_mock(8705),
+    ]
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch()
+            await held_flow("http://127.0.0.1:8705/", browser)
+            await held_mobile("http://127.0.0.1:8705/", browser)
             await new_flow("http://127.0.0.1:8701/", browser)
             await legacy_flow("http://127.0.0.1:8702/", browser)
             await mobile_flow("http://127.0.0.1:8704/", browser)

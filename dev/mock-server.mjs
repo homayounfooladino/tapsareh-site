@@ -1,8 +1,9 @@
 // Fake Tapsareh server for building and testing the page without Spark.
 // Serves ./out and imitates /api/* as described in API_CONTRACT.md. No real model, no real SMS.
 //
-//   node dev/mock-server.mjs                 → new server (guest, SMS, usage, chat list)
-//   MOCK_LEGACY=1 node dev/mock-server.mjs   → behaves like today's live server (invite only)
+//   node dev/mock-server.mjs                 → new server (no guests: sign in first; SMS, usage, chat list)
+//   MOCK_GUESTS=1 …                          → also guests (asking without sign-in, SITE_GUESTS=1 on Spark)
+//   MOCK_LEGACY=1 node dev/mock-server.mjs   → behaves like the old live server (invite only)
 //   MOCK_BUSY=1 …                            → every question gets the «busy» answer
 //
 // Test values: invite code TEST-CODE · SMS code 123456 · guest budget 3 questions.
@@ -15,6 +16,7 @@ import { randomBytes } from "node:crypto";
 const PORT = Number(process.env.PORT || 8698);
 const LEGACY = process.env.MOCK_LEGACY === "1";
 const BUSY = process.env.MOCK_BUSY === "1";
+const GUESTS = process.env.MOCK_GUESTS === "1";
 const FAST = process.env.MOCK_FAST === "1";
 const ROOT = new URL("../out/", import.meta.url).pathname;
 
@@ -109,6 +111,7 @@ async function api(req, res, path) {
     let a = me;
     if (!a) {
       if (LEGACY) return json(res, 401, { message: "وارد نشده‌اید." });
+      if (!GUESTS) return json(res, 401, { code: "login_required", message: "برای پرسیدن، با شمارهٔ موبایل یا کد دعوت وارد شوید." });
       a = newAccount("guest");
       stamp(res, a);
     }

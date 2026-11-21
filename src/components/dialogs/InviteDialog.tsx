@@ -6,11 +6,13 @@ import { MSG } from "@/content/copy";
 import { Dialog } from "./Dialog";
 
 export function InviteDialog({
+  lede,
   onLogin,
   onSms,
   onRules,
   onClose,
 }: {
+  lede?: string;
   onLogin: (code: string) => Promise<void>;
   onSms?: () => void;
   onRules: () => void;
@@ -47,7 +49,7 @@ export function InviteDialog({
       <form onSubmit={submit} noValidate style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         <div className="dialog-head">
           <h2>ورود با کد دعوت</h2>
-          <p>اگر از تپصره کد دعوت گرفته‌اید، این‌جا وارد کنید.</p>
+          <p>{lede || "اگر از تپصره کد دعوت گرفته‌اید، این‌جا وارد کنید."}</p>
         </div>
         <label className="field">
           کد دعوت

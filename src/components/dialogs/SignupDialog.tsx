@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ApiError } from "@/lib/api";
 import { fa, fullMobile, mobileRest } from "@/lib/fa";
-import { MSG } from "@/content/copy";
+import { HELD, MSG } from "@/content/copy";
 import { Dialog } from "./Dialog";
 
 export function SignupDialog({
@@ -15,7 +15,7 @@ export function SignupDialog({
   onRules,
   onClose,
 }: {
-  reason: "quota" | "manual" | "ended";
+  reason: "quota" | "manual" | "ended" | "answer";
   initialRest?: string;
   initialName?: string;
   onSubmit: (mobile: string, name: string) => Promise<void>;
@@ -52,12 +52,13 @@ export function SignupDialog({
     }
   }
 
-  const lede =
-    reason === "quota"
-      ? "پرسش‌های رایگان امروز تمام شد. پس از تأیید شماره، همین پرسش خودکار فرستاده می‌شود."
-      : reason === "ended"
-        ? "نشست شما تمام شده؛ دوباره وارد شوید."
-        : "با شمارهٔ موبایل وارد شوید تا گفتگوهایتان بماند.";
+  const LEDE = {
+    answer: HELD.signup,
+    quota: "پرسش‌های رایگان امروز تمام شد. پس از تأیید شماره، همین پرسش خودکار فرستاده می‌شود.",
+    ended: "نشست شما تمام شده؛ دوباره وارد شوید.",
+    manual: "با شمارهٔ موبایل وارد شوید تا گفتگوهایتان بماند.",
+  };
+  const lede = LEDE[reason];
 
   return (
     <Dialog label="ورود با شمارهٔ موبایل" onClose={onClose}>
