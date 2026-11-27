@@ -43,7 +43,7 @@ export const MSG = {
   ended: "مدتی گذشته و از حساب بیرون آمده‌اید؛ دوباره وارد شوید.",
   inviteBad: "این کد دعوت درست نیست یا دیگر اعتبار ندارد.",
   busy: "الان سرم شلوغ است؛ یک دقیقه‌ی دیگر دوباره بفرستید.",
-  long: "این گفتگو طولانی شده؛ برای جواب دقیق‌تر، سؤال بعدی را در یک گفتگوی تازه بپرسید.",
+  long: "از اینجا به بعد پرسش‌های اول این گفتگو کم‌کم از یادم می‌رود. اگر موضوع عوض شده، «گفتگوی تازه» را بزنید.",
   thanks: "ممنون که گفتید؛ همین کمک می‌کند بهتر شوم.",
 } as const;
 
@@ -55,3 +55,9 @@ export const HELD = {
   signup: "سؤالتان ثبت شد. شماره را که تأیید کنید، جوابش همین‌جا آماده می‌شود.",
   invite: "سؤالتان ثبت شد. با کد دعوت وارد شوید تا جوابش همین‌جا آماده شود.",
 } as const;
+
+// #703: conversation memory made visible.
+// A small fixed line under the question box, once the conversation has an answer (hidden while MSG.long shows).
+export const MEMORY_NOTE = "این گفتگو ۳ تا ۴ پرسش آخرتان را به یاد دارد. برای موضوع تازه، «گفتگوی تازه» را بزنید.";
+// Above a follow-up answer: how the question was understood (the server's rewritten search question).
+export const understoodLine = (q: string) => `برداشت من از پرسش شما: «${q}» — اگر درست نفهمیدم، کامل‌تر بپرسید.`;

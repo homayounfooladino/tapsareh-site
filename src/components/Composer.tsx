@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { DISCLAIMER, MSG } from "@/content/copy";
+import { DISCLAIMER, MEMORY_NOTE, MSG } from "@/content/copy";
 import { Icon } from "./Icon";
 
 export interface ComposerHandle {
@@ -10,10 +10,11 @@ export interface ComposerHandle {
 
 const MAX = 4000;
 
-type Props = { busy: boolean; long: boolean; note?: string; centered?: boolean; onSend: (text: string) => void; onNew: () => void };
+// memory: the conversation already has an answer → the small «this chat remembers…» line (not while `long` shows).
+type Props = { busy: boolean; long: boolean; memory?: boolean; note?: string; centered?: boolean; onSend: (text: string) => void; onNew: () => void };
 
 export const Composer = forwardRef<ComposerHandle, Props>(
-  function Composer({ busy, long, note, centered, onSend, onNew }, ref) {
+  function Composer({ busy, long, memory, note, centered, onSend, onNew }, ref) {
     const [text, setText] = useState("");
     const area = useRef<HTMLTextAreaElement>(null);
 
@@ -92,6 +93,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(
               </button>
             </div>
           </div>
+          {memory && !long && <p className="memnote">{MEMORY_NOTE}</p>}
           <p className="legal">{DISCLAIMER}</p>
         </form>
       </div>

@@ -15,5 +15,6 @@ export interface Turn {
   error?: string;
   verdict?: "ok" | "wrong" | null;
   past?: boolean; // loaded from history, not answered in this visit
+  understood?: string; // #703: how a follow-up was understood (server field understood_as); absent for first questions
   held?: boolean; // asked before sign-in: kept on the page, sent to the server only after sign-in
 }

@@ -44,6 +44,7 @@ export interface DoneData {
   validity_lines?: ValidityItem[];
   law_from?: string[];
   usage?: Usage;
+  understood_as?: string; // #703: only for a follow-up the server really rewrote
 }
 
 export interface SessionSummary {
@@ -123,7 +124,7 @@ export const api = {
 };
 
 export type StreamEvent =
-  | { event: "status"; data: { stage?: string } }
+  | { event: "status"; data: { stage?: string; understood_as?: string } }
   | { event: "token"; data: { t?: string } }
   | { event: "sources"; data: { sources?: Source[]; turn_id?: number } }
   | { event: "open"; data: { text?: string; turn_id?: number } }

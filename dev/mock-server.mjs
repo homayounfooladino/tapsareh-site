@@ -5,8 +5,13 @@
 //   MOCK_GUESTS=1 …                          → also guests (asking without sign-in, SITE_GUESTS=1 on Spark)
 //   MOCK_LEGACY=1 node dev/mock-server.mjs   → behaves like the old live server (invite only)
 //   MOCK_BUSY=1 …                            → every question gets the «busy» answer
+//   MOCK_GUEST_QUESTIONS=30 …                → a larger guest budget (default 3 questions)
 //
 // Test values: invite code TEST-CODE · SMS code 123456 · guest budget 3 questions.
+// #703 follow-ups: from the second question of a chat, `understood_as` comes in the «retrieve» status and in done
+// (like the server's rewritten question). Words in the question change that:
+//   «همان پرسش» → no understood_as (rewrite equal to the question) · «فقط در پایان» → understood_as only in done
+//   «جواب بلند» → a long answer with ten sources.
 
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
@@ -28,7 +33,7 @@ const tokens = new Map(); // cookie → account id
 const sessions = new Map(); // sid → {sid, owner, title, updated, turns: []}
 const smsCodes = new Map(); // mobile → {code, name}
 let turnSeq = 1000;
-const GUEST_BUDGET = 3 * 6000;
+const GUEST_BUDGET = Number(process.env.MOCK_GUEST_QUESTIONS || 3) * 6000;
 const DAILY = { sms: 150000, invite: 300000 };
 const PER_Q = 6000;
 
@@ -82,6 +87,12 @@ const ANSWER = `خلاصه: تا چهار ماه پس از پایان سال م�
 
 1. اظهارنامه را در سامانه پر کنید.
 2. پیوست‌ها را بارگذاری کنید.`;
+
+const REWRITES = { "برای قضات چطور؟": "نرخ مالیات حقوق قضات در سال ۱۴۰۵ چگونه است؟" };
+const understoodFor = (s, text) => {
+  if (!s.turns.length || text.includes("همان پرسش")) return undefined;
+  return REWRITES[text.trim()] || `${s.turns[s.turns.length - 1].q.trim()} — ${text.trim()}`;
+};
 
 const SOURCES = [
   { n: 1, title: "ماده ۱۱۰", doc_title: "قانون مالیات‌های مستقیم", status: "جاری", text: "اشخاص حقوقی مکلف‌اند اظهارنامه و ترازنامه و حساب سود و زیان را حداکثر تا چهار ماه پس از سال مالی تسلیم کنند…", validity_lines: ["اعتبار از 1394/04/31 تا امروز"] },
@@ -180,31 +191,39 @@ async function api(req, res, path) {
     const turnId = turnSeq++;
     res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "X-Accel-Buffering": "no" });
     const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    const text = String(b.text);
+    const understood = understoodFor(s, text);
+    const lateOnly = text.includes("فقط در پایان");
+    const long = text.includes("جواب بلند");
+    const answer = long ? Array(5).fill(ANSWER).join("\n\n") : ANSWER;
+    const sources = long ? Array.from({ length: 10 }, (_, i) => ({ ...SOURCES[i % SOURCES.length], n: i + 1 })) : SOURCES;
     for (const stage of ["rewrite", "retrieve", "pack", "generate"]) {
-      send("status", { stage });
+      send("status", stage === "retrieve" && understood && !lateOnly ? { stage, understood_as: understood } : { stage });
       await sleep(350);
     }
+    // Same order as the real server: sources first, then the answer text.
+    send("sources", { sources, turn_id: turnId });
     let acc = "";
-    for (const piece of ANSWER.match(/.{1,12}/gsu) || []) {
+    for (const piece of answer.match(/.{1,12}/gsu) || []) {
       acc += piece;
       send("token", { t: piece });
       await sleep(25);
     }
-    send("sources", { sources: SOURCES, turn_id: turnId });
     if (!s.title) s.title = String(b.text).trim().slice(0, 60);
     s.updated = new Date().toISOString();
     const done = {
       text: acc,
       turn_id: turnId,
-      sources: SOURCES,
+      sources,
       remaining_today: Math.max(0, Math.floor((me.budget - me.used) / PER_Q)),
       turn_in_session: s.turns.length + 1,
       validity_lines: [{ n: 1, lines: ["اعتبار از 1394/04/31 تا امروز"] }],
       law_from: ["تاریخ اجرای قانون: از 1395/01/01"],
     };
+    if (understood) done.understood_as = understood;
     if (!LEGACY) done.usage = usage(me);
     send("done", done);
-    s.turns.push({ turn_id: turnId, q: String(b.text), a: acc, sources: SOURCES, validity_lines: done.validity_lines, law_from: done.law_from, verdict: null });
+    s.turns.push({ turn_id: turnId, q: String(b.text), a: acc, sources, validity_lines: done.validity_lines, law_from: done.law_from, verdict: null });
     return res.end();
   }
   return json(res, 404, { message: "نشانی پیدا نشد." });

@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, type Source } from "@/lib/api";
 import { Answer } from "@/lib/answer";
 import { fa } from "@/lib/fa";
 import type { Turn } from "@/lib/types";
-import { HELD, MSG, STAGE } from "@/content/copy";
+import { HELD, MSG, STAGE, understoodLine } from "@/content/copy";
 import { Icon, Logo } from "./Icon";
 
 function SourceItem({ s }: { s: Source }) {
@@ -230,6 +230,27 @@ function Locked({ onSms, onInvite }: { onSms?: () => void; onInvite: () => void 
 }
 
 export function TurnView({ turn, sid, onSms, onInvite }: { turn: Turn; sid: string; onSms?: () => void; onInvite?: () => void }) {
+  const live = turn.state === "waiting" || turn.state === "streaming" || turn.state === "done";
+  const showUnderstood = live && !!turn.understood;
+  const uRef = useRef<HTMLParagraphElement>(null);
+  const proseRef = useRef<HTMLDivElement>(null);
+  const hadLine = useRef(false);
+  const hadProse = useRef(false);
+  // #703: the «understood» line normally arrives before the answer starts. If it only arrives with the end of the
+  // answer, it lands above text the reader may be reading: keep that text where it was on screen (the page's own
+  // scroll anchoring is off, see .scroll in globals.css, so this is the only adjustment).
+  useLayoutEffect(() => {
+    const line = uRef.current;
+    if (line && !hadLine.current && hadProse.current) {
+      const sc = line.closest(".scroll") as HTMLElement | null;
+      const body = line.parentElement;
+      if (sc && body && line.getBoundingClientRect().top < sc.getBoundingClientRect().bottom) {
+        sc.scrollTop += line.getBoundingClientRect().height + (parseFloat(getComputedStyle(body).rowGap) || 0);
+      }
+    }
+    hadLine.current = !!line;
+    hadProse.current = !!proseRef.current;
+  });
   return (
     <>
       <div className="u">
@@ -238,13 +259,24 @@ export function TurnView({ turn, sid, onSms, onInvite }: { turn: Turn; sid: stri
       <article className="bot" aria-busy={turn.state === "waiting" || turn.state === "streaming"}>
         <Logo size={32} />
         <div className="bot-body">
+          {showUnderstood && (
+            <p className="understood" ref={uRef}>
+              {understoodLine(turn.understood || "")}
+            </p>
+          )}
           {turn.state === "waiting" && <Waiting stage={turn.stage} startedAt={turn.startedAt} />}
           {turn.state === "error" && <p className="notice">{turn.error || MSG.net}</p>}
           {turn.state === "locked" && <Locked onSms={onSms} onInvite={onInvite || (() => undefined)} />}
           {(turn.state === "streaming" || turn.state === "done") && (
             <>
               {turn.state === "done" && turn.sources && <p className="basis">بر پایه‌ی {fa(turn.sources.length)} منبع</p>}
-              <div className="prose" aria-live={turn.state === "streaming" ? "polite" : undefined}>
+              {/* #703: the same line's room is kept while the answer is written, so its arrival at the end moves nothing. */}
+              {turn.state === "streaming" && turn.sources && (
+                <p className="basis" aria-hidden="true" style={{ visibility: "hidden" }}>
+                  بر پایه‌ی {fa(turn.sources.length)} منبع
+                </p>
+              )}
+              <div className="prose" ref={proseRef} aria-live={turn.state === "streaming" ? "polite" : undefined}>
                 <Answer text={turn.text} />
               </div>
               {turn.state === "done" && ((turn.validity && turn.validity.length > 0) || (turn.lawFrom && turn.lawFrom.length > 0)) && (

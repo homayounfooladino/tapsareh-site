@@ -366,6 +366,182 @@ async def busy_flow(base: str, browser) -> None:
     await ctx.close()
 
 
+MEMORY_NOTE = "این گفتگو ۳ تا ۴ پرسش آخرتان را به یاد دارد. برای موضوع تازه، «گفتگوی تازه» را بزنید."
+LONG_NOTE = "از اینجا به بعد پرسش‌های اول این گفتگو کم‌کم از یادم می‌رود. اگر موضوع عوض شده، «گفتگوی تازه» را بزنید."
+Q_RATE = "نرخ مالیات حقوق ۱۴۰۵؟"
+Q_JUDGES = "برای قضات چطور؟"
+JUDGES_LINE = "برداشت من از پرسش شما: «نرخ مالیات حقوق قضات در سال ۱۴۰۵ چگونه است؟» — اگر درست نفهمیدم، کامل‌تر بپرسید."
+
+# Records, for the newest answer, when the «understood» line and the answer text first appear (MutationObserver),
+# and samples the scroll position on every frame (with whether the answer has ended: the buttons under it exist).
+RECORD = """() => {
+  const sc = document.querySelector('.scroll');
+  const n = document.querySelectorAll('.bot').length;
+  const rec = window.__rec = {u: null, p: null, samples: [], n};
+  const bot = () => document.querySelectorAll('.bot')[rec.n];
+  const mo = new MutationObserver(() => {
+    const b = bot(); if (!b) return;
+    if (rec.u === null && b.querySelector('.understood')) rec.u = performance.now();
+    const pr = b.querySelector('.prose');
+    if (rec.p === null && pr && pr.innerText.trim()) rec.p = performance.now();
+  });
+  mo.observe(document.body, {subtree: true, childList: true, characterData: true});
+  const tick = () => {
+    const b = bot();
+    const pr = b && b.querySelector('.prose');
+    rec.samples.push({top: sc.scrollTop, done: !!(b && b.querySelector('.actions')), prose: pr ? pr.getBoundingClientRect().top : null,
+                      writing: !!(pr && b.getAttribute('aria-busy') === 'true')});
+    if (rec.samples.length < 20000) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}"""
+
+
+async def both_notes(page: Page) -> tuple[int, int]:
+    return await page.locator(".memnote:visible").count(), await page.locator(".longnote:visible").count()
+
+
+async def memory_flow(base: str, browser) -> None:
+    """#703: the memory line, the «understood» line above a follow-up, and MSG.long."""
+    ctx = await browser.new_context(viewport={"width": 1280, "height": 860})
+    page = await ctx.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    await page.goto(base)
+    await page.wait_for_selector(".welcome")
+    check("حافظه: پیش از هر جواب، خط حافظه نیست", await page.locator(".memnote").count() == 0)
+
+    await ask(page, Q_RATE)
+    await page.wait_for_selector(".bot >> nth=0 >> .actions", timeout=15000)
+    check("حافظه: پرسش اول بی خط برداشت", await page.locator(".bot >> nth=0 >> .understood").count() == 0)
+    m, l = await both_notes(page)
+    check("حافظه: پس از جواب اول، خط حافظه زیر کادر نوشتن، متن دقیق",
+          m == 1 and l == 0 and await page.locator(".memnote").inner_text() == MEMORY_NOTE)
+
+    await page.evaluate(RECORD)
+    await ask(page, Q_JUDGES)
+    await page.wait_for_selector(".bot >> nth=1 >> .actions", timeout=15000)
+    line = page.locator(".bot >> nth=1 >> .understood")
+    got = await line.all_inner_texts()
+    check("حافظه: پیگیری با خط برداشت، متن دقیق", got == [JUDGES_LINE], str(got))
+    rec = await page.evaluate("window.__rec")
+    check("حافظه: خط برداشت پیش از متن جواب آمد", rec["u"] is not None and rec["p"] is not None and rec["u"] < rec["p"], str({k: rec[k] for k in ("u", "p")}))
+    check("حافظه: خط برداشت بالای متن جواب است",
+          await page.evaluate("(() => { const b = document.querySelectorAll('.bot')[1]; return b.querySelector('.understood').getBoundingClientRect().bottom <= b.querySelector('.prose').getBoundingClientRect().top; })()"))
+
+    await ask(page, "همان پرسش را دوباره بگو")
+    await page.wait_for_selector(".bot >> nth=2 >> .actions", timeout=15000)
+    check("حافظه: پیگیری با بازنویسی برابر بی خط برداشت", await page.locator(".bot >> nth=2 >> .understood").count() == 0)
+    m, l = await both_notes(page)
+    check("حافظه: پس از سه جواب هنوز خط حافظه، بی یادداشت طولانی", m == 1 and l == 0, f"{m} {l}")
+
+    await ask(page, "پرسشی که برداشتش فقط در پایان می‌آید")
+    await page.wait_for_selector(".bot >> nth=3 >> .actions", timeout=15000)
+    check("حافظه: برداشتی که فقط در done آمد همان‌جا نشان داده شد", await page.locator(".bot >> nth=3 >> .understood").count() == 1)
+    m, l = await both_notes(page)
+    check("حافظه: پس از پرسش چهارم یادداشت طولانی با متن تازه و خط حافظه پنهان",
+          m == 0 and l == 1 and LONG_NOTE in await page.locator(".longnote").inner_text(), f"{m} {l}")
+    await no_english(page, "خط حافظه و خط برداشت")
+
+    # Reopened from the side menu: no «understood» lines (history has none), the long note stays alone.
+    await page.get_by_role("button", name="گفتگوی تازه").first.click()
+    await page.wait_for_selector(".welcome")
+    await page.wait_for_selector(".history button")
+    await page.locator(".history button").first.click()
+    await page.wait_for_selector(".bot >> nth=3 >> .actions", timeout=15000)
+    m, l = await both_notes(page)
+    check("حافظه: گفتگوی دوباره‌بازشده بی خط برداشت؛ خط حافظه و یادداشت طولانی با هم نه",
+          await page.locator(".understood").count() == 0 and not (m and l), f"{m} {l}")
+    check("بی خطای صفحه (حافظه)", not errors, "; ".join(errors[:3]))
+    await ctx.close()
+
+
+async def scroll_flow(base: str, browser) -> None:
+    """#703: no automatic scroll when an answer ends; a reader who scrolled up is never pulled down."""
+    ctx = await browser.new_context(viewport={"width": 1280, "height": 860})
+    page = await ctx.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    await page.goto(base)
+    await page.wait_for_selector(".welcome")
+    await ask(page, Q_RATE)
+    await page.wait_for_selector(".bot >> nth=0 >> .actions", timeout=15000)
+
+    # 1) Long answer, ten sources, reader at the bottom: followed while written; nothing moves when it ends.
+    await page.evaluate(RECORD)
+    await ask(page, "جواب بلند بده: مهلت اظهارنامه‌ی شرکت‌ها")
+    await page.wait_for_selector(".bot >> nth=1 >> .actions", timeout=20000)
+    await page.wait_for_timeout(600)
+    rec = await page.evaluate("window.__rec")
+    before = [s for s in rec["samples"] if not s["done"] and s["prose"] is not None]
+    after = [s for s in rec["samples"] if s["done"]]
+    check("اسکرول: ده منبع زیر جواب بلند", "منابع (۱۰)" in await page.locator(".bot >> nth=1 >> .sources-head").inner_text())
+    check("اسکرول: هنگام نوشتن جواب، صفحه دنبال متن رفت (خواننده پایین بود)",
+          len(before) > 2 and before[-1]["top"] > before[0]["top"], f"{before[0]['top'] if before else None} → {before[-1]['top'] if before else None}")
+    tops = sorted({round(s["top"]) for s in after})
+    prose = sorted({round(s["prose"]) for s in after if s["prose"] is not None})
+    check("اسکرول: پس از done موقعیت اسکرول همان پیش از done است (جواب بلند، ده منبع)",
+          bool(before) and tops == [round(before[-1]["top"])], f"پیش {round(before[-1]['top']) if before else None} پس {tops}")
+    check("اسکرول: متن جواب پس از done جابه‌جا نشد",
+          bool(before) and prose == [round(before[-1]["prose"])], f"پیش {round(before[-1]['prose']) if before else None} پس {prose}")
+    sc = await page.evaluate("(() => { const e = document.querySelector('.scroll'); return [e.scrollTop, e.scrollHeight, e.clientHeight]; })()")
+    check("اسکرول: صفحه تا ته منابع پایین نرفت", sc[1] - sc[0] - sc[2] > 300, str(sc))
+
+    # 2) The «understood» line arriving only with done lands above the text: the text stays where the reader sees it.
+    await page.evaluate("document.querySelector('.scroll').scrollTop = 1e9")
+    await page.evaluate(RECORD)
+    await ask(page, "جواب بلند فقط در پایان بده")
+    await page.wait_for_selector(".bot >> nth=2 >> .actions", timeout=20000)
+    await page.wait_for_timeout(600)
+    rec = await page.evaluate("window.__rec")
+    before = [s for s in rec["samples"] if not s["done"] and s["prose"] is not None]
+    after = [s for s in rec["samples"] if s["done"]]
+    prose = sorted({round(s["prose"]) for s in after if s["prose"] is not None})
+    check("اسکرول: خط برداشتِ دیررس متن جواب را نپراند",
+          await page.locator(".bot >> nth=2 >> .understood").count() == 1 and bool(before)
+          and all(abs(p - round(before[-1]["prose"])) <= 1 for p in prose), f"پیش {round(before[-1]['prose']) if before else None} پس {prose}")
+
+    # 3) A reader who scrolls up while the answer is written is never pulled down, during or after.
+    await page.evaluate("document.querySelector('.scroll').scrollTop = 1e9")
+    await page.evaluate(RECORD)
+    await ask(page, "جواب بلند دیگری بده")
+    await page.wait_for_function(
+        "(() => { const b = document.querySelectorAll('.bot')[3]; const p = b && b.querySelector('.prose'); return p && p.innerText.length > 200; })()",
+        timeout=20000)
+    await page.mouse.move(640, 300)
+    await page.mouse.wheel(0, -3000)
+    await page.wait_for_timeout(300)
+    up = await page.evaluate("document.querySelector('.scroll').scrollTop")
+    await page.wait_for_selector(".bot >> nth=3 >> .actions", timeout=20000)
+    await page.wait_for_timeout(600)
+    rec = await page.evaluate("window.__rec")
+    i_up = next((i for i, s in enumerate(rec["samples"]) if round(s["top"]) == round(up)), None)
+    later = sorted({round(s["top"]) for s in rec["samples"][i_up:]}) if i_up is not None else []
+    check("اسکرول: کاربرِ بالارفته پایین کشیده نمی‌شود (هنگام نوشتن و پس از پایان)",
+          i_up is not None and later == [round(up)], f"بالا {up} سپس {later[:6]}")
+    check("بی خطای صفحه (اسکرول)", not errors, "; ".join(errors[:3]))
+    await ctx.close()
+
+
+async def understood_mobile(base: str, browser) -> None:
+    """#703: on a phone the «understood» line is at most two lines, the rest «…»."""
+    ctx = await browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)
+    page = await ctx.new_page()
+    await page.goto(base)
+    await page.wait_for_selector(".welcome")
+    await ask(page, "اگر شرکتی در سال ۱۴۰۵ هم کالا صادر کند و هم خدمات فنی به مشتریان داخلی بدهد، مالیات بر ارزش افزوده و مالیات عملکردش چگونه حساب می‌شود؟")
+    await page.wait_for_selector(".bot >> nth=0 >> .actions", timeout=15000)
+    await ask(page, "برای شرکت‌های دانش‌بنیان چطور؟")
+    await page.wait_for_selector(".bot >> nth=1 >> .actions", timeout=15000)
+    dims = await page.evaluate(
+        "(() => { const e = document.querySelector('.understood');"
+        " const lh = parseFloat(getComputedStyle(e).lineHeight); return [e.clientHeight, e.scrollHeight, lh]; })()")
+    check("گوشی: خط برداشت حداکثر دو خط و بقیه بریده", dims[0] <= 2 * dims[2] + 1 and dims[1] > dims[0], str(dims))
+    r = await page.evaluate(MOBILE_CHECK)
+    check("گوشی: با خط حافظه و خط برداشت بی اسکرول افقی و دکمه‌ها یک‌خطی", not r["hscroll"] and not r["wrapped"], str(r))
+    await ctx.close()
+
+
 async def main() -> int:
     procs = [
         start_mock(8701, MOCK_GUESTS="1"),
@@ -373,6 +549,7 @@ async def main() -> int:
         start_mock(8703, MOCK_BUSY="1", MOCK_GUESTS="1"),
         start_mock(8704, MOCK_GUESTS="1"),
         start_mock(8705),
+        start_mock(8706, MOCK_GUESTS="1", MOCK_GUEST_QUESTIONS="30"),
     ]
     try:
         async with async_playwright() as p:
@@ -383,6 +560,9 @@ async def main() -> int:
             await legacy_flow("http://127.0.0.1:8702/", browser)
             await mobile_flow("http://127.0.0.1:8704/", browser)
             await busy_flow("http://127.0.0.1:8703/", browser)
+            await memory_flow("http://127.0.0.1:8706/", browser)
+            await scroll_flow("http://127.0.0.1:8706/", browser)
+            await understood_mobile("http://127.0.0.1:8706/", browser)
             await browser.close()
     finally:
         for pr in procs:

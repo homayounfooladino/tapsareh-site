@@ -156,7 +156,7 @@ a { color: var(--link); }
 .topbar h1 { margin: 0; font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .topbar .lead { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .mobile-only { display: none !important; }
-.scroll { flex: 1; min-height: 0; overflow: auto; padding: 28px 24px; }
+.scroll { flex: 1; min-height: 0; overflow: auto; padding: 28px 24px; overflow-anchor: none; } /* #703: Turn.tsx keeps the view still itself */
 .col { max-width: 800px; margin: 0 auto; width: 100%; display: flex; flex-direction: column; gap: 28px; }
 
 /* Welcome */
@@ -186,6 +186,7 @@ a { color: var(--link); }
 .prose ul, .prose ol { margin: 0 0 .8em; padding: 0 1.2em 0 0; }
 .prose ol { list-style-type: persian; }
 .basis { margin: 0; color: var(--muted); font-size: 13px; font-weight: 600; }
+.understood { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
 .validity-block { display: flex; flex-direction: column; gap: 4px; }
 .validity { margin: 0; font-size: 14px; line-height: 1.8; color: var(--text2); }
 .notice { margin: 0; background: var(--amber-bg); color: var(--amber-ink); border-radius: 12px; padding: 12px 14px; }
@@ -245,6 +246,7 @@ a { color: var(--link); }
 .box-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .box-note { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; color: var(--text2); }
 .legal { margin: 0; text-align: center; font-size: 12.5px; color: var(--muted); }
+.memnote { margin: 0; text-align: center; font-size: 12.5px; color: var(--muted); }
 
 /* Dialogs */
 .overlay { position: fixed; inset: 0; z-index: 50; background: var(--overlay); display: flex; align-items: center; justify-content: center; padding: 24px; }
@@ -286,6 +288,7 @@ a { color: var(--link); }
   .theme-tg { width: 40px; height: 40px; }
   .scrim { position: fixed; inset: 0; z-index: 39; background: var(--overlay); }
   .scroll { padding: 20px 14px; }
+  .understood { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
   .composer-wrap { padding: 0 10px 10px; }
   .welcome-head h2 { font-size: 22px; }
   .u-bubble { max-width: 92%; }
@@ -299,7 +302,7 @@ a { color: var(--link); }
 @media (max-height: 520px) {
   .scroll { padding-top: 12px; padding-bottom: 12px; }
   .box textarea { max-height: 64px; }
-  .legal { font-size: 12px; }
+  .legal, .memnote { font-size: 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }

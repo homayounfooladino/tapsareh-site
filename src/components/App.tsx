@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { api, ApiError, chatStream, type Account, type PastTurn, type SessionSummary } from "@/lib/api";
 import { fa } from "@/lib/fa";
 import type { Turn } from "@/lib/types";
@@ -72,6 +72,9 @@ const holdDelay = () => 3000 + Math.round(Math.random() * 1500);
 
 type SignupReason = "quota" | "manual" | "ended" | "answer";
 
+// How close to the bottom (in pixels) the reader must be for a streaming answer to be followed.
+const FOLLOW_PX = 100;
+
 function setUrlChat(id: string | null) {
   try {
     const u = new URL(location.href);
@@ -114,7 +117,10 @@ export default function App() {
   const abortRef = useRef<AbortController | null>(null);
   const composer = useRef<ComposerHandle>(null);
   const scroller = useRef<HTMLDivElement>(null);
+  // pinned: the reader is near the bottom (within FOLLOW_PX), so a streaming answer may be followed.
+  // jump: a question was just sent or a chat opened, so show the bottom once.
   const pinned = useRef(true);
+  const jump = useRef(false);
 
   const setAccount = useCallback((a: Account | null) => {
     accountRef.current = a;
@@ -182,6 +188,7 @@ export default function App() {
       pendingRef.current = text;
       saveHeld(text);
       pinned.current = true;
+      jump.current = true;
       const short = text.trim().slice(0, 60);
       setTitle((t) => (!t || (prev && t === prev.text.trim().slice(0, 60)) ? short : t));
       const turn: Turn = pause
@@ -239,6 +246,7 @@ export default function App() {
       setPageNote("");
       const key = newKey();
       pinned.current = true;
+      jump.current = true;
       setTurns((all) => [...all, { key, q: text, state: "waiting", stage: "rewrite", startedAt: Date.now(), text: "" }]);
       if (!title) setTitle(text.trim().slice(0, 60));
       const ctrl = new AbortController();
@@ -248,7 +256,8 @@ export default function App() {
       let finished = false;
       try {
         for await (const ev of chatStream(s, text, ctrl.signal)) {
-          if (ev.event === "status") updateTurn(key, { stage: ev.data.stage });
+          if (ev.event === "status")
+            updateTurn(key, ev.data.understood_as ? { stage: ev.data.stage, understood: ev.data.understood_as } : { stage: ev.data.stage });
           else if (ev.event === "token") {
             acc += ev.data.t || "";
             updateTurn(key, { state: "streaming", text: acc });
@@ -268,6 +277,7 @@ export default function App() {
               turnId: d.turn_id ?? t.turnId,
               validity: d.validity_lines,
               lawFrom: d.law_from,
+              understood: d.understood_as || t.understood,
             }));
             if (typeof d.turn_in_session === "number") setTurnInSession(d.turn_in_session);
             const patch: Partial<Account> = {};
@@ -356,6 +366,7 @@ export default function App() {
         setUrlChat(id);
         setPageNote("");
         pinned.current = true;
+        jump.current = true;
       } catch (e) {
         const err = e as ApiError;
         if (err.status === 401) {
@@ -445,6 +456,7 @@ export default function App() {
         const key = newKey();
         heldRef.current = { key, text: kept };
         pendingRef.current = kept;
+        jump.current = true;
         setTurns([{ key, q: kept, state: "locked", text: "", held: true }]);
         setTitle(kept.trim().slice(0, 60));
       } else if (kept) saveHeld(null);
@@ -470,10 +482,15 @@ export default function App() {
     clearReloadMark();
   }, []);
 
-  // Keep the newest answer in view while it streams, unless the reader scrolled up.
-  useEffect(() => {
+  // #703 scrolling. Sending a question (or opening a chat) shows the bottom once. While the newest answer is being
+  // prepared or written, follow it only if the reader is near the bottom; never pull down a reader who scrolled up.
+  // When the answer ends (sources, buttons, date lines arrive) nothing scrolls: the page stays where it was.
+  useLayoutEffect(() => {
     const el = scroller.current;
-    if (el && pinned.current) el.scrollTop = el.scrollHeight;
+    const last = turns[turns.length - 1];
+    const writing = !!last && (last.state === "waiting" || last.state === "streaming");
+    if (el && (jump.current || (writing && pinned.current))) el.scrollTop = el.scrollHeight;
+    jump.current = false;
   }, [turns]);
 
   const toggleTheme = () => {
@@ -550,7 +567,7 @@ export default function App() {
           ref={scroller}
           onScroll={(e) => {
             const el = e.currentTarget;
-            pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+            pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < FOLLOW_PX;
           }}
         >
           {pageNote && (
@@ -590,7 +607,17 @@ export default function App() {
             </div>
           )}
         </div>
-        {turns.length > 0 && <Composer ref={composer} busy={busy} long={turnInSession >= 4} note={note} onSend={send} onNew={newChat} />}
+        {turns.length > 0 && (
+          <Composer
+            ref={composer}
+            busy={busy}
+            long={turnInSession >= 4}
+            memory={turns.some((t) => t.state === "done" && !t.held)}
+            note={note}
+            onSend={send}
+            onNew={newChat}
+          />
+        )}
       </main>
 
       {dialog === "signup" && (
