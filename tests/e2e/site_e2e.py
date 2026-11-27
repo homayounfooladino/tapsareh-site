@@ -22,10 +22,10 @@ from pathlib import Path
 from playwright.async_api import Page, async_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[2]
-DISCLAIMER = "پاسخ‌ها بر پایهٔ متن جاری قوانین و مقررات تهیه می‌شوند، ممکن است خطا داشته باشند و جایگزین مشاور مالیاتی نیستند."
+DISCLAIMER = "تپصره هوش مصنوعی است و ممکن است اشتباه کند."
 LATIN = re.compile(r"[A-Za-z]")
 LATIN_DIGIT = re.compile(r"[0-9]")
-Q = "مهلت تسلیم اظهارنامهٔ عملکرد شرکت‌ها تا کی است؟"
+Q = "مهلت تسلیم اظهارنامه‌ی عملکرد شرکت‌ها تا کی است؟"
 
 results: list[tuple[str, bool, str]] = []
 
@@ -64,8 +64,8 @@ async def new_flow(base: str, browser) -> None:
     page.on("pageerror", lambda e: errors.append(str(e)))
     await page.goto(base)
     await page.wait_for_selector(".welcome")
-    await no_english(page, "صفحهٔ خوش‌آمد")
-    check("سلب مسئولیت عین متن فعلی", DISCLAIMER in await visible_text(page))
+    await no_english(page, "صفحه‌ی خوش‌آمد")
+    check("جمله‌ی هشدار، متن تأییدشده‌ی ۶ آذر", DISCLAIMER in await visible_text(page))
 
     # Three guest questions fit in the guest budget.
     for i in range(3):
@@ -78,15 +78,15 @@ async def new_flow(base: str, browser) -> None:
     check("هیچ رقم لاتین در خط‌های تاریخ", not LATIN_DIGIT.search(body_digits), body_digits[:80])
     check("کارت منبع با برچسب وضعیت", await page.locator(".tag.ok").count() > 0 and await page.locator(".tag.bad").count() > 0)
     check("یادداشت «به‌روزرسانی» روی کارت", await page.locator(".update-note b", has_text="به‌روزرسانی").count() > 0)
-    check("دکمهٔ «اشتباه است»", await page.locator("button", has_text="اشتباه است").count() == 3)
+    check("دکمه‌ی «اشکال دارد» (فقط نشانه، با نام برای صفحه‌خوان)", await page.get_by_role("button", name="اشکال دارد", exact=True).count() == 3)
     await no_english(page, "پس از سه جواب")
 
-    # Feedback «اشتباه است» with a comment.
-    await page.locator("button", has_text="اشتباه است").first.click()
+    # Feedback «اشکال دارد» with a comment.
+    await page.get_by_role("button", name="اشکال دارد", exact=True).first.click()
     await page.locator(".wrongbox textarea").fill("عدد سال درست نیست")
     await page.locator(".wrongbox button", has_text="ثبت").click()
     await expect(page.locator(".thanks").first).to_be_visible()
-    check("ثبت «اشتباه است» با توضیح", True)
+    check("ثبت «اشکال دارد» با توضیح", True)
 
     # A guest who starts a new chat still sees the earlier one in the side menu and can reopen it.
     await page.get_by_role("button", name="گفتگوی تازه").first.click()
@@ -100,11 +100,11 @@ async def new_flow(base: str, browser) -> None:
 
     # Fourth question: guest budget is over → signup opens, the question is kept.
     await ask(page, "پرسش چهارم مهمان")
-    dlg = page.get_by_role("dialog", name="ورود با شمارهٔ موبایل")
+    dlg = page.get_by_role("dialog", name="ورود با شماره‌ی موبایل")
     await expect(dlg).to_be_visible()
-    check("پنجرهٔ ثبت‌نام پس از تمام شدن سهم مهمان", "پرسش‌های رایگان امروز تمام شد" in await dlg.inner_text())
+    check("پنجره‌ی ثبت‌نام پس از تمام شدن سهم مهمان", "پرسش‌های رایگان امروز تمام شد" in await dlg.inner_text())
     check("پرسش چهارم روی صفحه نیامد", await page.locator(".u-bubble", has_text="پرسش چهارم مهمان").count() == 0)
-    await no_english(page, "پنجرهٔ ثبت‌نام")
+    await no_english(page, "پنجره‌ی ثبت‌نام")
 
     # Pasting +98… leaves only the 9 digits after the fixed «۰۹».
     await page.evaluate(
@@ -126,14 +126,14 @@ async def new_flow(base: str, browser) -> None:
 
     # Without the tick the code is not requested.
     await dlg.get_by_role("button", name="دریافت کد تأیید").click()
-    check("بی تیک قوانین، کد فرستاده نمی‌شود", "تیک قوانین" in await dlg.inner_text())
+    check("بی تیک قوانین، کد فرستاده نمی‌شود", "قوانین تپصره را تأیید کنید" in await dlg.inner_text())
     await dlg.get_by_role("checkbox").check()
     await page.fill("input[autocomplete=name]", "رضا محمدی")
     await dlg.get_by_role("button", name="دریافت کد تأیید").click()
     code = page.get_by_role("dialog", name="کد تأیید")
     await expect(code).to_be_visible()
-    check("شماره در پنجرهٔ کد با رقم فارسی", "۰۹۱۲ ۱۲۳ ۴۵۶۷" in await code.inner_text())
-    await no_english(page, "پنجرهٔ کد")
+    check("شماره در پنجره‌ی کد با رقم فارسی", "۰۹۱۲ ۱۲۳ ۴۵۶۷" in await code.inner_text())
+    await no_english(page, "پنجره‌ی کد")
     await code.locator("input").fill("۱۲۳۴۵۶")
     await expect(code).to_be_hidden(timeout=5000)
     await page.wait_for_selector(".u-bubble:has-text('پرسش چهارم مهمان')", timeout=5000)
@@ -163,7 +163,7 @@ async def new_flow(base: str, browser) -> None:
 
     # Persian 404.
     await page.goto(base + "nowhere")
-    await no_english(page, "صفحهٔ ۴۰۴")
+    await no_english(page, "صفحه‌ی ۴۰۴")
     await ctx.close()
 
 
@@ -179,24 +179,24 @@ async def held_flow(base: str, browser) -> None:
     await page.wait_for_selector(".welcome")
     side = page.locator("aside")
     check("بی مهمان: منوی کناری ورود با موبایل و کد دعوت را پیشنهاد می‌کند",
-          await side.get_by_text("ورود با شمارهٔ موبایل").count() == 1 and await side.get_by_text("کد دعوت").count() >= 1)
+          await side.get_by_text("ورود با شماره‌ی موبایل").count() == 1 and await side.get_by_text("کد دعوت").count() >= 1)
 
     t0 = time.monotonic()
     await ask(page)
     await page.wait_for_selector(".u-bubble")
     check("پرسش فوراً روی صفحه آمد و کارت انتظار دیده می‌شود", await page.locator(".wait").count() == 1)
-    dlg = page.get_by_role("dialog", name="ورود با شمارهٔ موبایل")
+    dlg = page.get_by_role("dialog", name="ورود با شماره‌ی موبایل")
     await expect(dlg).to_be_visible(timeout=10000)
     dt = time.monotonic() - t0
-    check("پنجرهٔ ورود پس از چند ثانیه باز شد", 2.5 <= dt <= 7, f"{dt:.1f} ثانیه")
-    check("متن پنجره: «پرسش شما ثبت شد»", "پرسش شما ثبت شد" in await dlg.inner_text())
+    check("پنجره‌ی ورود پس از چند ثانیه باز شد", 2.5 <= dt <= 7, f"{dt:.1f} ثانیه")
+    check("متن پنجره: «سؤالتان ثبت شد»", "سؤالتان ثبت شد" in await dlg.inner_text())
     check("پیش از ورود هیچ پرسشی به سرور نرفت", not sent, str(sent))
-    await no_english(page, "پنجرهٔ ورود برای پرسش نگه‌داشته")
+    await no_english(page, "پنجره‌ی ورود برای پرسش نگه‌داشته")
     await page.keyboard.press("Escape")
     await expect(dlg).to_be_hidden()
     held = page.locator(".held")
-    check("پس از بستن پنجره، کارت «پرسش شما ثبت شد» با دو دکمه می‌ماند",
-          await held.count() == 1 and await held.locator("button").count() == 2 and "پرسش شما ثبت شد" in await held.inner_text())
+    check("پس از بستن پنجره، کارت «سؤالتان ثبت شد» با دو دکمه می‌ماند",
+          await held.count() == 1 and await held.locator("button").count() == 2 and "سؤالتان ثبت شد" in await held.inner_text())
 
     # A second question while one waits takes its place.
     await ask(page, "پرسش دوم پیش از ورود")
@@ -208,12 +208,12 @@ async def held_flow(base: str, browser) -> None:
     await held.get_by_role("button", name="کد دعوت دارم").click()
     inv = page.get_by_role("dialog", name="ورود با کد دعوت")
     await expect(inv).to_be_visible()
-    check("پنجرهٔ کد دعوت هم از پرسش ثبت‌شده می‌گوید", "پرسش شما ثبت شد" in await inv.inner_text())
+    check("پنجره‌ی کد دعوت هم از پرسش ثبت‌شده می‌گوید", "سؤالتان ثبت شد" in await inv.inner_text())
     await page.keyboard.press("Escape")
     await expect(inv).to_be_hidden()
 
     # Sign in by SMS from the card: the question is sent once, then answered here.
-    await held.get_by_role("button", name="ورود با شمارهٔ موبایل").click()
+    await held.get_by_role("button", name="ورود با شماره‌ی موبایل").click()
     await expect(dlg).to_be_visible()
     await page.fill("#m-rest", "۱۲۱۲۳۴۵۶۷")
     await dlg.get_by_role("checkbox").check()
@@ -230,7 +230,7 @@ async def held_flow(base: str, browser) -> None:
     check("کارت «ثبت شد» پس از ورود رفت", await page.locator(".held").count() == 0)
     await page.wait_for_selector(".history button")
     check("گفتگو در فهرست منوی کناری آمد", await page.locator(".history button").count() == 1)
-    check("پس از ورود، پرسش از حافظهٔ زبانه پاک شد", await page.evaluate("sessionStorage.getItem('tp-held')") is None)
+    check("پس از ورود، پرسش از حافظه‌ی زبانه پاک شد", await page.evaluate("sessionStorage.getItem('tp-held')") is None)
     await no_english(page, "پس از ورود و پاسخ")
     check("بی خطای صفحه (پرسش پیش از ورود)", not errors, "; ".join(errors[:3]))
     await ctx.close()
@@ -243,7 +243,7 @@ async def held_flow(base: str, browser) -> None:
     await page.goto(base)
     await page.wait_for_selector(".welcome")
     await ask(page, "پرسش پیش از بارگذاری دوباره")
-    await expect(page.get_by_role("dialog", name="ورود با شمارهٔ موبایل")).to_be_visible(timeout=10000)
+    await expect(page.get_by_role("dialog", name="ورود با شماره‌ی موبایل")).to_be_visible(timeout=10000)
     await page.reload()
     await page.wait_for_selector(".held", timeout=5000)
     check("پس از بارگذاری دوباره، پرسش نگه‌داشته برگشت",
@@ -281,7 +281,7 @@ async def held_mobile(base: str, browser) -> None:
         await page.goto(base)
         await page.wait_for_selector(".welcome")
         await ask(page)
-        dlg = page.get_by_role("dialog", name="ورود با شمارهٔ موبایل")
+        dlg = page.get_by_role("dialog", name="ورود با شماره‌ی موبایل")
         await expect(dlg).to_be_visible(timeout=10000)
         r1 = await page.evaluate(MOBILE_CHECK)
         await page.keyboard.press("Escape")
@@ -299,18 +299,18 @@ async def legacy_flow(base: str, browser) -> None:
     await page.goto(base)
     await page.wait_for_selector(".welcome")
     check("سرور قدیمی: منوی کناری فقط ورود دعوتی پیشنهاد می‌کند", await page.locator("aside").get_by_text("ورود با کد دعوت").count() == 1
-          and await page.locator("aside").get_by_text("ورود با شمارهٔ موبایل").count() == 0)
+          and await page.locator("aside").get_by_text("ورود با شماره‌ی موبایل").count() == 0)
     await ask(page)
     inv = page.get_by_role("dialog", name="ورود با کد دعوت")
     await expect(inv).to_be_visible(timeout=10000)
-    check("سرور قدیمی: پس از پرسش، پنجرهٔ کد دعوت باز می‌شود", True)
-    check("سرور قدیمی: پیوند ورود پیامکی پنهان است", await inv.get_by_text("با شمارهٔ موبایل وارد شوید").count() == 0)
-    check("سرور قدیمی: کارت «ثبت شد» فقط دکمهٔ کد دعوت دارد",
+    check("سرور قدیمی: پس از پرسش، پنجره‌ی کد دعوت باز می‌شود", True)
+    check("سرور قدیمی: پیوند ورود پیامکی پنهان است", await inv.get_by_text("با شماره‌ی موبایل وارد شوید").count() == 0)
+    check("سرور قدیمی: کارت «ثبت شد» فقط دکمه‌ی کد دعوت دارد",
           await page.locator(".held button").all_inner_texts() == ["ورود با کد دعوت"])
     await inv.locator("input[type=text]").fill("WRONG")
     await inv.get_by_role("checkbox").check()
     await inv.get_by_role("button", name="ورود", exact=True).click()
-    await expect(inv.locator("[role=alert]")).to_have_text("کد درست نیست یا دیگر معتبر نیست.")
+    await expect(inv.locator("[role=alert]")).to_have_text("این کد دعوت درست نیست یا دیگر اعتبار ندارد.")
     await inv.locator("input[type=text]").fill("TEST-CODE")
     await inv.get_by_role("button", name="ورود", exact=True).click()
     await expect(inv).to_be_hidden()

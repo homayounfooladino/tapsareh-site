@@ -5,6 +5,7 @@ import { api, ApiError, chatStream, type Account, type PastTurn, type SessionSum
 import { fa } from "@/lib/fa";
 import type { Turn } from "@/lib/types";
 import { HELD, MSG } from "@/content/copy";
+import { clearReloadMark } from "@/lib/reload";
 import { Composer, type ComposerHandle } from "./Composer";
 import { Icon } from "./Icon";
 import { Sidebar } from "./Sidebar";
@@ -360,7 +361,7 @@ export default function App() {
         if (err.status === 401) {
           setAccount(null);
           openSignup("ended");
-        } else setPageNote(err.status === 404 ? "این گفتگو پیدا نشد." : MSG.net);
+        } else setPageNote(err.status === 404 ? "این گفتگو پیدا نشد؛ شاید پاک شده باشد." : MSG.net);
       }
     },
     [chats, openSignup, setAccount, setSid, turns.length],
@@ -465,6 +466,10 @@ export default function App() {
     [],
   );
 
+  useEffect(() => {
+    clearReloadMark();
+  }, []);
+
   // Keep the newest answer in view while it streams, unless the reader scrolled up.
   useEffect(() => {
     const el = scroller.current;
@@ -533,7 +538,7 @@ export default function App() {
           {turns.length > 0 && (
             <button type="button" className="ghost desktop-only" onClick={copyAll}>
               <Icon name="copy" size={16} />
-              کپی همهٔ گفتگو
+              کپی همه‌ی گفتگو
             </button>
           )}
           <button type="button" className="iconbtn mobile-only" aria-label="گفتگوی تازه" onClick={newChat}>
@@ -556,7 +561,17 @@ export default function App() {
             </div>
           )}
           {turns.length === 0 ? (
-            booted && <Welcome name={signedIn ? account?.name : undefined} onPick={(q) => composer.current?.fill(q)} onGuide={() => setDialog("guide")} />
+            <Welcome show={booted} name={signedIn ? account?.name : undefined} onGuide={() => setDialog("guide")}>
+              <Composer
+                ref={composer}
+                centered
+                busy={busy}
+                long={false}
+                note={usage && usage.pct >= 80 ? note : undefined}
+                onSend={send}
+                onNew={newChat}
+              />
+            </Welcome>
           ) : (
             <div className="col">
               {turns.map((t) => (
@@ -575,7 +590,7 @@ export default function App() {
             </div>
           )}
         </div>
-        <Composer ref={composer} busy={busy} long={turnInSession >= 4} note={note} onSend={send} onNew={newChat} />
+        {turns.length > 0 && <Composer ref={composer} busy={busy} long={turnInSession >= 4} note={note} onSend={send} onNew={newChat} />}
       </main>
 
       {dialog === "signup" && (
@@ -632,7 +647,7 @@ export default function App() {
           }}
         />
       )}
-      {dialog === "guide" && <GuideDialog onClose={() => setDialog(null)} />}
+      {dialog === "guide" && <GuideDialog dataUpdated={account?.data_updated} onClose={() => setDialog(null)} />}
       {rulesOpen && <RulesDialog onClose={() => setRulesOpen(false)} />}
     </div>
   );

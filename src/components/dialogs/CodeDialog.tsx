@@ -37,7 +37,7 @@ export function CodeDialog({
 
   async function verify(value: string) {
     if (value.length !== 6) {
-      setErr("کد ۶ رقمی را کامل وارد کنید.");
+      setErr("هر ۶ رقم کد را بنویسید.");
       return;
     }
     setErr("");
@@ -46,7 +46,7 @@ export function CodeDialog({
       await onVerify(value);
     } catch (x) {
       const e = x as ApiError;
-      setErr(e.message || (e.status === 0 ? MSG.net : "کد درست نیست."));
+      setErr(e.message || (e.status === 0 ? MSG.net : "این کد درست نیست؛ یک بار دیگر نگاه کنید."));
       setBusy(false);
     }
   }
@@ -74,10 +74,10 @@ export function CodeDialog({
         style={{ display: "flex", flexDirection: "column", gap: 18 }}
       >
         <div className="dialog-head">
-          <h2>کد تأیید را وارد کنید</h2>
+          <h2>کدی را که پیامک کردم بنویسید</h2>
           <p>
             کد ۶ رقمی به{" "}
-            <span style={{ direction: "ltr", unicodeBidi: "isolate", fontWeight: 600, color: "var(--text)" }}>{showMobile(mobile)}</span> پیامک شد.{" "}
+            <span style={{ direction: "ltr", unicodeBidi: "isolate", fontWeight: 600, color: "var(--text)" }}>{showMobile(mobile)}</span> فرستادم.{" "}
             <button type="button" className="linkbtn" style={{ minHeight: 0, fontSize: 15, fontWeight: 500 }} onClick={onEdit}>
               ویرایش شماره
             </button>

@@ -33,11 +33,11 @@ export function SignupDialog({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!mobile) {
-      setErr("شمارهٔ موبایل باید ۱۱ رقم باشد و با ۰۹ شروع شود.");
+      setErr("این شماره کامل نیست؛ شماره‌ی موبایل ۱۱ رقم است و با ۰۹ شروع می‌شود.");
       return;
     }
     if (!agree) {
-      setErr("برای ادامه، تیک قوانین و مقررات را بزنید.");
+      setErr("یک قدم مانده: لطفاً قوانین تپصره را تأیید کنید.");
       return;
     }
     setErr("");
@@ -46,7 +46,7 @@ export function SignupDialog({
       await onSubmit(mobile, name.trim());
     } catch (x) {
       const e2 = x as ApiError;
-      setErr(e2.message || (e2.status === 0 ? MSG.net : "ارسال کد انجام نشد. کمی بعد دوباره امتحان کنید."));
+      setErr(e2.message || (e2.status === 0 ? MSG.net : "کد فرستاده نشد؛ چند لحظه‌ی دیگر دوباره امتحان کنید."));
     } finally {
       setSending(false);
     }
@@ -55,20 +55,20 @@ export function SignupDialog({
   const LEDE = {
     answer: HELD.signup,
     quota: "پرسش‌های رایگان امروز تمام شد. پس از تأیید شماره، همین پرسش خودکار فرستاده می‌شود.",
-    ended: "نشست شما تمام شده؛ دوباره وارد شوید.",
-    manual: "با شمارهٔ موبایل وارد شوید تا گفتگوهایتان بماند.",
+    ended: "مدتی گذشته و از حساب بیرون آمده‌اید؛ دوباره وارد شوید.",
+    manual: "با شماره‌ی موبایل، گفتگوهایتان همیشه می‌ماند و از هر دستگاهی در دسترس است.",
   };
   const lede = LEDE[reason];
 
   return (
-    <Dialog label="ورود با شمارهٔ موبایل" onClose={onClose}>
+    <Dialog label="ورود با شماره‌ی موبایل" onClose={onClose}>
       <form onSubmit={submit} noValidate style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         <div className="dialog-head">
-          <h2>برای ادامه، شمارهٔ موبایلتان را وارد کنید</h2>
+          <h2>شماره‌ی موبایلتان را بنویسید</h2>
           <p>{lede}</p>
         </div>
         <label className="field" htmlFor="m-rest">
-          شمارهٔ موبایل
+          شماره‌ی موبایل
           <span className="mobile-box">
             <span className="pre" aria-hidden="true">
               ۰۹
@@ -90,11 +90,11 @@ export function SignupDialog({
             />
           </span>
           <span id="m-help" style={{ fontSize: 13, color: "var(--muted)", fontWeight: 400 }}>
-            «۰۹» نوشته شده؛ فقط ۹ رقم بعدی را بزنید.
+            ۰۹ را خودم گذاشته‌ام؛ ۹ رقم بعدی را بنویسید.
           </span>
         </label>
         <label className="field">
-          نام (اختیاری)
+          اسمتان (اختیاری)
           <input className="input" type="text" autoComplete="name" placeholder="مثلاً رضا محمدی" maxLength={60} value={name} onChange={(e) => setName(e.target.value)} />
         </label>
         <label className="check">

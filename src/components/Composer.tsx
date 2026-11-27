@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { DISCLAIMER, MSG } from "@/content/copy";
 import { Icon } from "./Icon";
 
@@ -10,10 +10,17 @@ export interface ComposerHandle {
 
 const MAX = 4000;
 
-export const Composer = forwardRef<ComposerHandle, { busy: boolean; long: boolean; note?: string; onSend: (text: string) => void; onNew: () => void }>(
-  function Composer({ busy, long, note, onSend, onNew }, ref) {
+type Props = { busy: boolean; long: boolean; note?: string; centered?: boolean; onSend: (text: string) => void; onNew: () => void };
+
+export const Composer = forwardRef<ComposerHandle, Props>(
+  function Composer({ busy, long, note, centered, onSend, onNew }, ref) {
     const [text, setText] = useState("");
     const area = useRef<HTMLTextAreaElement>(null);
+
+    // On the start page of a wide screen, the cursor waits in the box. Not on phones: the keyboard would cover the page.
+    useEffect(() => {
+      if (centered && window.matchMedia("(min-width: 821px)").matches) area.current?.focus();
+    }, [centered]);
 
     useImperativeHandle(ref, () => ({
       fill: (t: string) => {
@@ -32,10 +39,10 @@ export const Composer = forwardRef<ComposerHandle, { busy: boolean; long: boolea
     const tooLong = text.length > MAX;
 
     return (
-      <div className="composer-wrap">
+      <div className={centered ? "composer-wrap centered" : "composer-wrap"}>
         <form
           className="composer"
-          aria-label="فرستادن پرسش"
+          aria-label="فرستادن سؤال"
           onSubmit={(e) => {
             e.preventDefault();
             submit();
@@ -45,7 +52,7 @@ export const Composer = forwardRef<ComposerHandle, { busy: boolean; long: boolea
             <div className="longnote">
               <span>{MSG.long}</span>
               <button type="button" className="btn2" onClick={onNew}>
-                گفتگوی جدید
+                گفتگوی تازه
               </button>
             </div>
           )}
@@ -56,8 +63,8 @@ export const Composer = forwardRef<ComposerHandle, { busy: boolean; long: boolea
             <textarea
               id="q"
               ref={area}
-              rows={2}
-              placeholder="پرسش مالیاتی‌تان را بنویسید؛ مثلاً «مهلت اظهارنامهٔ اجاره تا کی است؟»"
+              rows={centered ? 3 : 2}
+              placeholder="سؤالتان را بنویسید؛ مثلاً: مهلت اظهارنامه‌ی اجاره تا کی است؟"
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {
@@ -71,7 +78,7 @@ export const Composer = forwardRef<ComposerHandle, { busy: boolean; long: boolea
             <div className="box-row">
               <span className="box-note" aria-live="polite">
                 {tooLong ? (
-                  <span style={{ color: "var(--red-ink)" }}>سؤال خیلی بلند است (حداکثر ۴۰۰۰ نویسه).</span>
+                  <span style={{ color: "var(--red-ink)" }}>سؤال کمی طولانی شده؛ لطفاً کوتاه‌ترش کنید.</span>
                 ) : note ? (
                   <>
                     <Icon name="info" size={16} />

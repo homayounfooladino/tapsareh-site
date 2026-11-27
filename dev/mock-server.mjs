@@ -85,8 +85,8 @@ const ANSWER = `خلاصه: تا چهار ماه پس از پایان سال م�
 
 const SOURCES = [
   { n: 1, title: "ماده ۱۱۰", doc_title: "قانون مالیات‌های مستقیم", status: "جاری", text: "اشخاص حقوقی مکلف‌اند اظهارنامه و ترازنامه و حساب سود و زیان را حداکثر تا چهار ماه پس از سال مالی تسلیم کنند…", validity_lines: ["اعتبار از 1394/04/31 تا امروز"] },
-  { n: 2, title: "ماده ۱۹۲", doc_title: "قانون مالیات‌های مستقیم", status: "جاری", text: "جریمهٔ عدم تسلیم اظهارنامه…", note_display: "این ماده در ۱۴۰۴ اصلاح شده است.\nمنبع: قانون بودجهٔ ۱۴۰۴" },
-  { n: 3, title: "بند ۲ بخشنامهٔ ۲۰۰/۱۴۰۳", doc_title: "بخشنامه‌ها", status: "منسوخ", text: "متن قدیمی…" },
+  { n: 2, title: "ماده ۱۹۲", doc_title: "قانون مالیات‌های مستقیم", status: "جاری", text: "جریمه‌ی عدم تسلیم اظهارنامه…", note_display: "این ماده در ۱۴۰۴ اصلاح شده است.\nمنبع: قانون بودجه‌ی ۱۴۰۴" },
+  { n: 3, title: "بند ۲ بخشنامه‌ی ۲۰۰/۱۴۰۳", doc_title: "بخشنامه‌ها", status: "منسوخ", text: "متن قدیمی…" },
   { n: 4, title: "ماده ۱۵۷", doc_title: "قانون مالیات‌های مستقیم", status: "جاری", text: "…" },
 ];
 
@@ -111,7 +111,7 @@ async function api(req, res, path) {
     let a = me;
     if (!a) {
       if (LEGACY) return json(res, 401, { message: "وارد نشده‌اید." });
-      if (!GUESTS) return json(res, 401, { code: "login_required", message: "برای پرسیدن، با شمارهٔ موبایل یا کد دعوت وارد شوید." });
+      if (!GUESTS) return json(res, 401, { code: "login_required", message: "برای پرسیدن، با شماره‌ی موبایل یا کد دعوت وارد شوید." });
       a = newAccount("guest");
       stamp(res, a);
     }
@@ -120,7 +120,7 @@ async function api(req, res, path) {
   }
   if (!LEGACY && path === "/api/sms/start" && req.method === "POST") {
     const b = await body(req);
-    if (!/^09\d{9}$/.test(String(b.mobile || ""))) return json(res, 400, { message: "شمارهٔ موبایل درست نیست." });
+    if (!/^09\d{9}$/.test(String(b.mobile || ""))) return json(res, 400, { message: "شماره‌ی موبایل درست نیست." });
     if (b.accept_terms !== true) return json(res, 400, { message: "پذیرش قوانین لازم است." });
     smsCodes.set(b.mobile, { code: "123456", name: String(b.name || "") });
     return json(res, 200, { resend_after: 60 });
@@ -171,7 +171,7 @@ async function api(req, res, path) {
     const s = sessions.get(b.session_id);
     if (!s) return json(res, 400, { message: "نشست نامعتبر است. گفتگوی جدید بسازید." });
     if (s.owner !== me.id) return json(res, 403, { message: "این نشست برای این دعوت نیست." });
-    if (BUSY) return json(res, 429, { code: "busy", message: "الان تپصره شلوغ است. یک دقیقهٔ دیگر دوباره بفرستید." }, { "Retry-After": "60" });
+    if (BUSY) return json(res, 429, { code: "busy", message: "الان تپصره شلوغ است. یک دقیقه‌ی دیگر دوباره بفرستید." }, { "Retry-After": "60" });
     if (me.used >= me.budget) {
       if (me.kind === "guest") return json(res, 429, { code: "quota_guest", message: "پرسش‌های رایگان تمام شد." });
       return json(res, 429, { code: "quota_daily", message: "سهم امروز تمام شد؛ ساعت ۱۲ شب به وقت ایران دوباره پر می‌شود." });

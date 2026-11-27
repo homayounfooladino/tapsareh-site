@@ -85,7 +85,7 @@ function Sources({ sources, onOpen }: { sources: Source[]; onOpen: () => void })
                   setMore(!more);
                 }}
               >
-                {more ? "بستن منابع دیگر" : `منابع دیگری که بررسی شد (${fa(rest.length)})`}
+                {more ? "کمتر نشان بده" : `منبع‌های دیگری که دیدم (${fa(rest.length)})`}
               </button>
             </div>
           )}
@@ -113,10 +113,13 @@ function Feedback({ turnId, text, initial }: { turnId: number; text: string; ini
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {/* Icon-only, like chat assistants: the label is in the tooltip and for screen readers. */}
       <div className="actions">
         <button
           type="button"
-          className="ghost"
+          className="act"
+          aria-label={copied ? "کپی شد" : "کپی"}
+          title={copied ? "کپی شد" : "کپی"}
           onClick={() => {
             navigator.clipboard
               ?.writeText(text)
@@ -127,32 +130,43 @@ function Feedback({ turnId, text, initial }: { turnId: number; text: string; ini
               .catch(() => undefined);
           }}
         >
-          <Icon name={copied ? "check" : "copy"} size={16} />
-          {copied ? "کپی شد" : "کپی"}
+          <Icon name={copied ? "check" : "copy"} size={18} />
         </button>
-        {!sent && (
-          <>
-            <button type="button" className="ghost" onClick={() => send("ok")}>
-              <Icon name="thumb" size={16} />
-              درست بود
-            </button>
-            <button type="button" className="ghost warn" aria-expanded={wrongOpen} onClick={() => setWrongOpen(true)}>
-              <Icon name="thumbdown" size={16} />
-              اشتباه است
-            </button>
-          </>
-        )}
+        <button
+          type="button"
+          className="act"
+          aria-label="مفید بود"
+          title="مفید بود"
+          aria-pressed={sent === "ok"}
+          disabled={!!sent}
+          onClick={() => send("ok")}
+        >
+          <Icon name="thumb" size={18} />
+        </button>
+        <button
+          type="button"
+          className="act"
+          aria-label="اشکال دارد"
+          title="اشکال دارد"
+          aria-pressed={sent === "wrong" || wrongOpen}
+          aria-expanded={wrongOpen}
+          disabled={!!sent}
+          onClick={() => setWrongOpen((v) => !v)}
+        >
+          <Icon name="thumbdown" size={18} />
+        </button>
+        {sent && <span className="thanks">{MSG.thanks}</span>}
       </div>
       {wrongOpen && !sent && (
         <div className="wrongbox">
           <label className="sr-only" htmlFor={`w-${turnId}`}>
-            چه چیزی اشتباه بود؟ (اختیاری)
+            اگر بگویید کجایش درست نبود، خیلی کمک می‌کند (اختیاری)
           </label>
           <textarea
             id={`w-${turnId}`}
             maxLength={1000}
             rows={3}
-            placeholder="چه چیزی اشتباه بود؟ (اختیاری)"
+            placeholder="اگر بگویید کجایش درست نبود، خیلی کمک می‌کند (اختیاری)"
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             autoFocus
@@ -167,7 +181,6 @@ function Feedback({ turnId, text, initial }: { turnId: number; text: string; ini
           </div>
         </div>
       )}
-      {sent && <p className="thanks">{MSG.thanks}</p>}
     </div>
   );
 }
@@ -181,13 +194,13 @@ function Waiting({ stage, startedAt }: { stage?: string; startedAt?: number }) {
   const secs = startedAt ? Math.max(0, Math.floor((now - startedAt) / 1000)) : 0;
   return (
     <div className="wait" role="status" aria-live="polite">
-      <b>در حال آماده کردن پاسخ</b>
+      <b>دارم جواب را آماده می‌کنم</b>
       <span className="wait-stage">
         <Icon name="spin" size={18} className="spin" />
         {STAGE[stage || "rewrite"] || STAGE.rewrite}
       </span>
       <small>
-        {fa(secs)} ثانیه · بیشتر پاسخ‌ها کمتر از یک دقیقه طول می‌کشد. می‌توانید صفحه را باز بگذارید.
+        {fa(secs)} ثانیه · معمولاً کمتر از یک دقیقه طول می‌کشد.
       </small>
     </div>
   );
@@ -205,7 +218,7 @@ function Locked({ onSms, onInvite }: { onSms?: () => void; onInvite: () => void 
         {onSms && (
           <button type="button" className="btn" onClick={onSms}>
             <Icon name="phone" size={18} />
-            ورود با شمارهٔ موبایل
+            ورود با شماره‌ی موبایل
           </button>
         )}
         <button type="button" className={onSms ? "btn2" : "btn"} onClick={onInvite}>
@@ -230,7 +243,7 @@ export function TurnView({ turn, sid, onSms, onInvite }: { turn: Turn; sid: stri
           {turn.state === "locked" && <Locked onSms={onSms} onInvite={onInvite || (() => undefined)} />}
           {(turn.state === "streaming" || turn.state === "done") && (
             <>
-              {turn.state === "done" && turn.sources && <p className="basis">{fa(turn.sources.length)} منبع بررسی شد</p>}
+              {turn.state === "done" && turn.sources && <p className="basis">بر پایه‌ی {fa(turn.sources.length)} منبع</p>}
               <div className="prose" aria-live={turn.state === "streaming" ? "polite" : undefined}>
                 <Answer text={turn.text} />
               </div>

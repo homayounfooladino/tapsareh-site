@@ -26,11 +26,11 @@ export function InviteDialog({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!code.trim()) {
-      setErr("کد دعوت را وارد کنید.");
+      setErr("کد دعوت را بنویسید.");
       return;
     }
     if (!agree) {
-      setErr("برای ادامه، تیک قوانین و مقررات را بزنید.");
+      setErr("یک قدم مانده: لطفاً قوانین تپصره را تأیید کنید.");
       return;
     }
     setErr("");
@@ -49,7 +49,7 @@ export function InviteDialog({
       <form onSubmit={submit} noValidate style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         <div className="dialog-head">
           <h2>ورود با کد دعوت</h2>
-          <p>{lede || "اگر از تپصره کد دعوت گرفته‌اید، این‌جا وارد کنید."}</p>
+          <p>{lede || "کد دعوتی را که از تپصره گرفته‌اید این‌جا بنویسید."}</p>
         </div>
         <label className="field">
           کد دعوت
@@ -84,7 +84,7 @@ export function InviteDialog({
           <p className="center">
             کد دعوت ندارید؟{" "}
             <button type="button" className="linkbtn" onClick={onSms}>
-              با شمارهٔ موبایل وارد شوید
+              با شماره‌ی موبایل وارد شوید
             </button>
           </p>
         )}

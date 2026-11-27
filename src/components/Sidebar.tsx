@@ -3,18 +3,17 @@
 import { useMemo, useState } from "react";
 import type { Account, SessionSummary } from "@/lib/api";
 import { showMobile } from "@/lib/fa";
-import { TAGLINE } from "@/content/copy";
 import { Icon, Logo } from "./Icon";
 import { UsageMeter } from "./UsageMeter";
 
-function groupOf(iso?: string): "امروز" | "هفتهٔ گذشته" | "قدیمی‌تر" {
+function groupOf(iso?: string): "امروز" | "هفته‌ی گذشته" | "قدیمی‌تر" {
   if (!iso) return "قدیمی‌تر";
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return "قدیمی‌تر";
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   if (t >= start.getTime()) return "امروز";
-  if (t >= start.getTime() - 6 * 86400000) return "هفتهٔ گذشته";
+  if (t >= start.getTime() - 6 * 86400000) return "هفته‌ی گذشته";
   return "قدیمی‌تر";
 }
 
@@ -57,7 +56,7 @@ export function Sidebar({
   const signedIn = !!account && account.account !== "guest";
   const groups = useMemo(() => {
     const list = q.trim() ? chats.filter((c) => c.title.includes(q.trim())) : chats;
-    const order = ["امروز", "هفتهٔ گذشته", "قدیمی‌تر"] as const;
+    const order = ["امروز", "هفته‌ی گذشته", "قدیمی‌تر"] as const;
     return order
       .map((name) => ({ name, items: list.filter((c) => groupOf(c.updated_at) === name) }))
       .filter((g) => g.items.length > 0);
@@ -69,16 +68,22 @@ export function Sidebar({
       {open && <div className="scrim mobile-only" onClick={onClose} aria-hidden="true" />}
       <aside className={open ? "side open" : "side"} aria-label="منوی کناری" id="side">
         <div className="side-head">
-          <Logo />
-          <div className="side-brand">
-            <b>تپصره</b>
-            <span>{TAGLINE}</span>
-          </div>
+          <Logo size={30} />
+          <b className="side-name">تپصره</b>
+          <button
+            type="button"
+            className="theme-tg"
+            aria-label={theme === "dark" ? "حالت روشن" : "حالت تیره"}
+            title={theme === "dark" ? "حالت روشن" : "حالت تیره"}
+            onClick={onToggleTheme}
+          >
+            <Icon name={theme === "dark" ? "sun" : "moon"} size={18} />
+          </button>
           <button type="button" className="iconbtn mobile-only" aria-label="بستن منو" onClick={onClose}>
             <Icon name="x" />
           </button>
         </div>
-        <button type="button" className="btn" style={{ width: "100%" }} onClick={onNew}>
+        <button type="button" className="btn side-new" onClick={onNew}>
           <Icon name="plus" />
           گفتگوی تازه
         </button>
@@ -92,7 +97,7 @@ export function Sidebar({
                   <>
                     <button type="button" className="btn2" onClick={onSms}>
                       <Icon name="phone" size={18} />
-                      ورود با شمارهٔ موبایل
+                      ورود با شماره‌ی موبایل
                     </button>
                     <button type="button" className="linkbtn" style={{ fontWeight: 500, fontSize: 14 }} onClick={onInvite}>
                       کد دعوت دارم
@@ -111,10 +116,10 @@ export function Sidebar({
               <input className="input" type="search" aria-label="جست‌وجو در گفتگوها" placeholder="جست‌وجو در گفتگوها" value={q} onChange={(e) => setQ(e.target.value)} />
             </label>
             <nav className="history" aria-label="گفتگوهای شما">
-              {chatsState === "loading" && chats.length === 0 && <span className="history-empty">در حال آوردن گفتگوها…</span>}
+              {chatsState === "loading" && chats.length === 0 && <span className="history-empty">گفتگوهایتان را می‌آورم…</span>}
               {chatsState === "unsupported" && <span className="history-empty">فهرست گفتگوهای قبلی به‌زودی این‌جا می‌آید.</span>}
-              {chatsState === "error" && <span className="history-empty">فهرست گفتگوها باز نشد.</span>}
-              {chatsState === "idle" && chats.length === 0 && <span className="history-empty">هنوز گفتگویی ندارید. اولین پرسش را بفرستید.</span>}
+              {chatsState === "error" && <span className="history-empty">فهرست گفتگوها باز نشد؛ کمی بعد دوباره سر بزنید.</span>}
+              {chatsState === "idle" && chats.length === 0 && <span className="history-empty">هنوز سؤالی نپرسیده‌اید؛ اولین سؤالتان را بنویسید.</span>}
               {chatsState === "idle" && chats.length > 0 && groups.length === 0 && <span className="history-empty">گفتگویی با این عبارت پیدا نشد.</span>}
               {groups.map((g) => (
                 <div className="history-group" key={g.name}>
@@ -133,10 +138,10 @@ export function Sidebar({
             <div className="guest-box">
               {smsOk ? (
                 <>
-                  <p>گفتگوهای شما پس از ورود این‌جا می‌ماند تا هر وقت خواستید برگردید.</p>
+                  <p>بعد از ورود، گفتگوهایتان این‌جا می‌ماند تا هر وقت خواستید برگردید.</p>
                   <button type="button" className="btn2" onClick={onSms}>
                     <Icon name="phone" size={18} />
-                    ورود با شمارهٔ موبایل
+                    ورود با شماره‌ی موبایل
                   </button>
                   <button type="button" className="linkbtn" style={{ fontWeight: 500, fontSize: 14 }} onClick={onInvite}>
                     کد دعوت دارم
@@ -144,7 +149,7 @@ export function Sidebar({
                 </>
               ) : (
                 <>
-                  <p>برای پرسیدن، با کد دعوتی که گرفته‌اید وارد شوید.</p>
+                  <p>برای پرسیدن، با کد دعوتی که از تپصره گرفته‌اید وارد شوید.</p>
                   <button type="button" className="btn2" onClick={onInvite}>
                     <Icon name="lock" size={18} />
                     ورود با کد دعوت
@@ -158,19 +163,14 @@ export function Sidebar({
 
         <div className="side-foot">
           {account && <UsageMeter usage={account.usage} />}
-          {account?.data_updated && <span className="updated">دادهٔ قوانین به‌روز تا {account.data_updated}</span>}
-          <button type="button" className="ghost" style={{ width: "100%", justifyContent: "flex-start" }} onClick={onToggleTheme}>
-            <Icon name={theme === "dark" ? "sun" : "moon"} />
-            {theme === "dark" ? "حالت روشن" : "حالت تیره"}
+          <button type="button" className="side-row" onClick={onGuide}>
+            <Icon name="book" size={18} />
+            راهنمای پرسیدن
           </button>
-          <div className="side-links">
-            <button type="button" className="linkbtn" onClick={onRules}>
-              قوانین و مقررات
-            </button>
-            <button type="button" className="linkbtn" onClick={onGuide}>
-              راهنما
-            </button>
-          </div>
+          <button type="button" className="side-row" onClick={onRules}>
+            <Icon name="doc" size={18} />
+            قوانین و مقررات تپصره
+          </button>
           {signedIn && (
             <div className="me">
               <span className="me-badge" aria-hidden="true">
